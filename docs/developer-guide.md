@@ -11,9 +11,10 @@
 go 1.22+
 docker 24+ / docker compose 2.20+
 git 2.40+
-golangci-lint v2 (make lint-install)
-golang-migrate   (go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest)
-goimports        (go install golang.org/x/tools/cmd/goimports@latest)
+restic                 # auf Zielsystemen für Agent-Betrieb
+golangci-lint v2       # make lint-install
+golang-migrate         # go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+goimports              # go install golang.org/x/tools/cmd/goimports@latest
 ```
 
 ## Setup
@@ -22,18 +23,10 @@ goimports        (go install golang.org/x/tools/cmd/goimports@latest)
 git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
 
-# Abhängigkeiten
-make deps
-
-# Dev-Stack starten (PostgreSQL + Redis)
-make dev-up
-
-# Datenbank migrieren
-make migrate-up
-
-# Control Plane starten
-make run
-# → http://localhost:8080/health → {"status":"ok"}
+make deps          # go mod download
+make dev-up        # PostgreSQL + Redis (Docker)
+make migrate-up    # Schema 000001–000008
+make run           # → http://localhost:8080/health → {"status":"ok"}
 ```
 
 ## Projektstruktur
@@ -41,150 +34,145 @@ make run
 ```
 opensourcebackup/
 ├── cmd/
-│   └── control-plane/main.go   # Einstiegspunkt: Server + Scheduler + Middleware
+│   ├── control-plane/main.go   # Server + Scheduler + Auth + Middleware
+│   └── agent/main.go           # Agent: Enrollment-Flow + Poll-Loop
 ├── internal/
-│   ├── api/                    # HTTP REST API
-│   │   ├── doc.go              # Package-Kommentar
-│   │   ├── handler.go          # Handler-Struct, DI, decode/writeJSON/ErrBodyTooLarge
-│   │   ├── middleware.go       # Recovery, SecurityHeaders, BodyLimit, Logging, Timeout, Chain
-│   │   ├── routes.go           # URL-Routing /health + /v1/...
+│   ├── api/
+│   │   ├── handler.go          # Handler-Struct, DI, decode, ErrBodyTooLarge
+│   │   ├── middleware.go       # Recovery, SecurityHeaders, BodyLimit, Logging, Timeout
+│   │   ├── agent_auth.go       # AgentAuth-Middleware, SystemIDFromContext
+│   │   ├── enrollment.go       # POST /enrollment-token, POST /agent/enroll
+│   │   ├── agent_jobs.go       # GET/start/complete/fail /v1/agent/jobs/*
+│   │   ├── routes.go           # Routing: öffentlich + /v1/agent/* (geschützt)
 │   │   ├── systems.go          # CRUD /v1/systems
 │   │   ├── repositories.go     # CRUD /v1/repositories
 │   │   ├── policies.go         # CRUD /v1/policies
-│   │   ├── jobs.go             # CRUD /v1/jobs
-│   │   └── snapshots.go        # CRD  /v1/snapshots
-│   ├── catalog/                # Datenbankschicht
-│   │   ├── db.go               # pgxpool.Pool, Open/Ping/Close
-│   │   ├── models.go           # System, BackupRepository, BackupPolicy, BackupJob, Snapshot
+│   │   ├── jobs.go             # CRUD /v1/jobs (inkl. ?system_id=&status=pending)
+│   │   └── snapshots.go        # CRD /v1/snapshots
+│   ├── auth/
+│   │   ├── token.go            # GenerateToken (256-bit), HashToken (SHA-256)
+│   │   ├── enrollment_store.go # OTP: Create, Consume, Revoke
+│   │   └── agent_token_store.go# Bearer: Create, ValidateAndTouch, Revoke
+│   ├── agent/
+│   │   ├── agent.go            # Poll-Loop, Job-Flow, 401→Abbruch
+│   │   ├── tokenfile.go        # SaveToken(0600), LoadToken
+│   │   ├── client/client.go    # HTTP-Client /v1/agent/* mit Bearer-Token
+│   │   └── restic/runner.go    # Restic-Wrapper: init, backup --json, parse
+│   ├── catalog/
+│   │   ├── models.go           # System, BackupRepository, BackupPolicy (mit RepositoryID),
+│   │   │                       # BackupJob, Snapshot
 │   │   ├── errors.go           # ErrNotFound, ErrConflict
-│   │   ├── systems.go          # SystemStore
-│   │   ├── repositories.go     # RepositoryStore
-│   │   ├── policies.go         # PolicyStore
-│   │   ├── jobs.go             # JobStore
-│   │   └── snapshots.go        # SnapshotStore
+│   │   └── *.go                # 5 Store-Interfaces + pgx-Implementierungen
 │   └── scheduler/
 │       └── scheduler.go        # Cron-Dispatcher + Dead-Man's-Switch
 ├── migrations/
-│   ├── 000001_create_systems.{up,down}.sql
-│   ├── 000002_create_repositories.{up,down}.sql
-│   ├── 000003_create_backup_policies.{up,down}.sql
-│   ├── 000004_create_backup_jobs.{up,down}.sql
-│   └── 000005_create_snapshots.{up,down}.sql
-├── deployments/
-│   └── docker-compose/dev.yml  # PostgreSQL 16 + Redis 7
-├── docs/
-│   ├── arc42.md / arc42.html
-│   ├── uml.md / uml.html
-│   ├── developer-guide.md / developer-guide.html
-│   ├── USER_GUIDE.md / USER_GUIDE.html
-│   ├── architecture/ARCHITECTURE.md
-│   ├── developer-guide/DEVELOPER_GUIDE.md
-│   ├── developer-guide/CLEAN_CODE.md
-│   ├── quality/lint-strategy.md
-│   └── adr/
+│   ├── 000001–000005           # systems, repositories, backup_policies, jobs, snapshots
+│   ├── 000006                  # repository_id in backup_policies
+│   ├── 000007                  # agent_enrollment_tokens
+│   └── 000008                  # agent_tokens
 ├── .golangci.hard.yml          # Lint Schicht 1 — blockiert CI
-├── .golangci.warn.yml          # Lint Schicht 2 — zeigt Baustellen
-├── .github/workflows/ci.yml    # CI: Test + Lint
-├── Makefile
-└── go.mod
+├── .golangci.warn.yml          # Lint Schicht 2 — informativ
+├── .github/workflows/ci.yml
+└── Makefile
 ```
 
 ## Make-Targets
 
 ```bash
-make deps           # go mod download
-make test           # Unit-Tests
-make test-integration  # Integration-Tests gegen PostgreSQL (DATABASE_URL nötig)
-make lint           # golangci-lint Schicht 1 — blockiert
-make lint-warn      # golangci-lint Schicht 2 — informativ
-make fmt            # gofmt + goimports
-make check          # fmt + lint + test
-make run            # Control Plane starten
-make dev-up         # Docker Compose starten
-make dev-down       # Docker Compose stoppen
-make migrate-up     # Alle Migrationen ausführen
-make migrate-down   # Alle Migrationen rückgängig
-make migrate-status # Aktuelle Migration-Version
-make lint-install   # golangci-lint v2 installieren
+make deps            # go mod download
+make test            # Unit-Tests
+make test-integration# Integration-Tests (DATABASE_URL nötig)
+make lint            # Schicht 1 — blockiert
+make lint-warn       # Schicht 2 — informativ
+make fmt             # gofmt + goimports
+make check           # fmt + lint + test
+make run             # Control Plane
+make run-agent       # Agent (CONTROL_PLANE_URL + Token nötig)
+make dev-up          # Docker Compose starten
+make dev-down        # Docker Compose stoppen
+make migrate-up      # Migrationen ausführen (inkl. 000006–000008)
+make migrate-down    # Migrationen rückgängig
+make lint-install    # golangci-lint v2 installieren
 ```
 
 ## Umgebungsvariablen
 
+### Control Plane
+
 ```bash
-# Pflicht
 DATABASE_URL=postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
-
-# Optional
-LISTEN_ADDR=:8080       # Standard: :8080
-REDIS_URL=redis://localhost:6379
+LISTEN_ADDR=:8080
 ```
 
-Vorlage: `.env.example` — niemals `.env.local` committen.
+### Agent (eine Token-Option wählen)
 
-## Branching & Commits
+```bash
+CONTROL_PLANE_URL=http://localhost:8080
+RESTIC_PASSWORD=geheimes-passwort
+RESTIC_REPO=s3:mein-bucket/backups/system-name
+RESTIC_BIN=restic              # optional, Default: restic im PATH
+AGENT_POLL_INTERVAL=30s        # optional, Default: 30s
 
-**GitHub Flow** — ein `main`-Branch, kurzlebige Feature-Branches:
-
+# Token-Priorität:
+AGENT_TOKEN=<token>            # 1. direkter Token
+AGENT_TOKEN_FILE=data/agent-token  # 2. Token aus Datei
+ENROLLMENT_TOKEN=<token>       # 3. Einmal-Token zum Enrollen
 ```
-feature/OB-123-kurzbeschreibung
-fix/OB-456-beschreibung
-docs/OB-789-beschreibung
-```
 
-**Conventional Commits:**
+## Agent-Enrollment (einmalig)
 
-```
-feat(catalog): add SystemStore with CRUD operations
-fix(api): return 404 on missing system instead of 500
-docs(adr): add ADR-004 for scheduler design
-chore(lint): promote revive to hard layer
+```bash
+# 1. Admin erzeugt Enrollment-Token für ein System
+curl -X POST http://localhost:8080/v1/systems/{system_id}/enrollment-token
+# → {"token": "Xk3mNp...", "expires_at": "...+30min"}
+
+# 2. Agent enrollt sich (token wird in data/agent-token gespeichert)
+CONTROL_PLANE_URL=http://localhost:8080 \
+ENROLLMENT_TOKEN=Xk3mNp... \
+RESTIC_PASSWORD=secret \
+RESTIC_REPO=s3:bucket/backups \
+make run-agent
 ```
 
 ## Tests schreiben
 
 ```go
-// Unit-Test (kein Build-Tag nötig) — mit Stubs
-func TestCreateSystem_Returns201_WithID(t *testing.T) { ... }
+// Unit-Test — kein Build-Tag, kein Docker
+func TestAgent_FailsJob_WhenPolicyHasNoRepository(t *testing.T) { ... }
 
 // Integration-Test — Build-Tag + DATABASE_URL
 //go:build integration
-func TestSystemStore_Create_AssignsIDAndCreatedAt(t *testing.T) { ... }
+func TestEnrollmentTokenStore_Consume_RejectsExpired(t *testing.T) { ... }
 ```
 
-```bash
-# Nur Unit-Tests
-go test ./...
+## Test-Übersicht (~70 Tests)
 
-# Integration-Tests
-DATABASE_URL=... go test -tags=integration ./internal/catalog/...
-```
+| Paket | Typ | Inhalt |
+|---|---|---|
+| `internal/auth` | Unit | GenerateToken, HashToken (5 Tests) |
+| `internal/auth` | Integration | Enrollment + Agent-Token Stores (7 Tests) |
+| `internal/api` | Unit | Handler, Middleware, AgentAuth (16+ Tests) |
+| `internal/agent` | Unit | Poll-Loop, 401-Handling, Transient-Error (4 Tests) |
+| `internal/catalog` | Integration | Alle 5 Stores, B12-Tests (50+ Tests) |
+| `internal/scheduler` | Unit | Scheduler Start (2 Tests) |
 
 ## Definition of Done
 
 - [ ] `go build ./...` — kein Fehler
 - [ ] `make lint` — 0 Issues
-- [ ] `make test` — alle grün
-- [ ] Integration-Tests für neue DB-Stores
-- [ ] `CHANGELOG.md` aktualisiert (bei feat/fix)
-- [ ] Beide READMEs (EN + DE) aktualisiert wenn nötig
-- [ ] ADR erstellt wenn Architekturentscheidung getroffen wurde
+- [ ] `make test` + `make test-integration` — alle grün
+- [ ] Tokens werden nie geloggt (Code-Review-Pflicht)
+- [ ] `CHANGELOG.md` aktualisiert (feat/fix)
+- [ ] Beide READMEs (EN + DE) synchron halten
+- [ ] Keine Credentials im Code
 
-## Coding-Regeln (Kurzfassung)
+## Coding-Regeln
 
-Vollständige Regeln: [CLEAN_CODE.md](developer-guide/CLEAN_CODE.md)
-
-- **DIP**: Handler hängen von Interfaces ab, nicht von pgx-Implementierungen
-- **SRP**: Eine Datei — eine Verantwortlichkeit
-- **IOSP**: `main.go` orchestriert, `catalog/` führt aus
-- **KISS**: stdlib `net/http` statt Router-Framework
-- **YAGNI**: Keine vorauseilenden Abstraktionen
-
-## CI/CD
-
-`.github/workflows/ci.yml` läuft bei jedem Push/PR:
-
-```
-1. Test     — Unit + Integration gegen PostgreSQL
-2. Lint     — golangci-lint hard (blockiert Merge)
-3. Lint-Warn — golangci-lint warn (non-blocking, informativ)
-```
+| Prinzip | Beispiel im Projekt |
+|---|---|
+| DIP | `ControlPlaneClient` Interface — Agent kennt keinen konkreten HTTP-Client |
+| SRP | `auth/token.go` — nur Token-Hashing, sonst nichts |
+| IOSP | `agent.go` orchestriert, `restic/runner.go` führt aus |
+| KISS | stdlib net/http, keine Router-Frameworks |
+| YAGNI | Keine DTOs bis sie wirklich gebraucht werden |
+| Security | Tokens nie loggen — `// Never log this` im Code |

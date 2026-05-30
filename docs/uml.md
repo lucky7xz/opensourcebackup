@@ -1,7 +1,7 @@
 # UML — OpensourceBackup Diagramme
 
 > Aktuelle Diagramme in Mermaid-Syntax.
-> Stand: B1–B7 implementiert.
+> Stand: B1–B9.7 implementiert.
 
 ---
 
@@ -16,34 +16,32 @@ graph TB
 
     subgraph ControlPlane["Control Plane (Go)"]
         MW[Middleware\nRecovery · Headers · Limit · Logging · Timeout]
+        AUTH_MW[AgentAuth Middleware\nBearer Token → system_id]
         API[REST API\n/v1/systems · /v1/jobs · /v1/policies\n/v1/repositories · /v1/snapshots]
+        AGENT_API[Agent API\n/v1/agent/jobs · start · complete · fail\n/v1/agent/enroll]
         SCHED[Scheduler\nCron + Dead-Man's Switch]
-        CATALOG[Catalog Layer\nSystemStore · JobStore · PolicyStore\nRepositoryStore · SnapshotStore]
+        CATALOG[Catalog Layer\n5 Stores]
+        AUTH[Auth Layer\nEnrollmentTokenStore\nAgentTokenStore]
     end
 
     subgraph Storage
-        PG[(PostgreSQL 16\nCatalog DB)]
-        REDIS[(Redis\nMessage Queue)]
-    end
-
-    subgraph BackupEngines["Backup Engines (auf Agent-System)"]
-        RESTIC[Restic]
-        BORG[Borg]
-        PGBR[pgBackRest]
-        VELERO[Velero]
+        PG[(PostgreSQL 16)]
+        REDIS[(Redis)]
     end
 
     WEB -->|HTTPS REST| MW
-    AGENT -->|HTTPS mTLS| MW
+    AGENT -->|Bearer Token| MW
+    MW --> AUTH_MW
+    AUTH_MW --> AGENT_API
     MW --> API
     API --> CATALOG
+    AGENT_API --> CATALOG
+    AGENT_API --> AUTH
     SCHED --> CATALOG
     CATALOG --> PG
+    AUTH --> PG
     SCHED --> REDIS
-    AGENT --> RESTIC
-    AGENT --> BORG
-    AGENT --> PGBR
-    AGENT --> VELERO
+    AGENT -->|restic backup| RESTIC[Restic Engine]
 ```
 
 ---
@@ -55,244 +53,243 @@ classDiagram
     class System {
         +UUID ID
         +string Hostname
-        +string OS
-        +string AgentVersion
-        +time.Time LastSeen
-        +map Tags
         +string RiskClass
+        +map Tags
         +time.Time CreatedAt
     }
-
     class BackupRepository {
         +UUID ID
         +string Type
         +string Location
-        +string EncryptionMode
         +bool ObjectLockEnabled
-        +UUID RetentionPolicyID
         +time.Time CreatedAt
     }
-
     class BackupPolicy {
         +UUID ID
         +string Name
-        +[]string Includes
-        +[]string Excludes
-        +string Schedule
-        +map Retention
         +string Engine
-        +[]string PreHooks
-        +[]string PostHooks
+        +string Schedule
+        +UUID RepositoryID
         +time.Time CreatedAt
     }
-
     class BackupJob {
         +UUID ID
         +UUID SystemID
         +UUID PolicyID
-        +time.Time StartedAt
-        +time.Time FinishedAt
         +string Status
-        +int64 BytesScanned
         +int64 BytesUploaded
-        +string ErrorSummary
-        +map RawOutput
         +time.Time CreatedAt
     }
-
     class Snapshot {
         +UUID ID
         +UUID JobID
-        +string EngineSnapshotID
         +UUID RepositoryID
-        +time.Time CreatedAt
-        +string Hostname
-        +[]string Paths
+        +string EngineSnapshotID
         +string ChecksumStatus
+        +time.Time CreatedAt
     }
-
-    System "1" --> "0..*" BackupJob : has
-    BackupPolicy "1" --> "0..*" BackupJob : triggers
-    BackupJob "1" --> "0..*" Snapshot : produces
-    BackupRepository "1" --> "0..*" Snapshot : stores
+    System "1" --> "0..*" BackupJob
+    BackupPolicy "1" --> "0..*" BackupJob
+    BackupPolicy --> BackupRepository : RepositoryID
+    BackupJob "1" --> "0..*" Snapshot
+    BackupRepository "1" --> "0..*" Snapshot
 ```
 
 ---
 
-## 3. Klassendiagramm — Store Interfaces (DIP)
+## 3. Klassendiagramm — Auth Models
 
 ```mermaid
 classDiagram
-    class SystemStore {
+    class EnrollmentToken {
+        +UUID ID
+        +UUID SystemID
+        +string TokenHash
+        +time.Time ExpiresAt
+        +time.Time UsedAt
+        +time.Time RevokedAt
+        +time.Time CreatedAt
+    }
+    class AgentToken {
+        +UUID ID
+        +UUID SystemID
+        +string TokenHash
+        +time.Time LastUsedAt
+        +time.Time RevokedAt
+        +time.Time CreatedAt
+    }
+    class EnrollmentTokenStore {
         <<interface>>
-        +Create(ctx, System) error
-        +GetByID(ctx, UUID) System
-        +List(ctx) []System
-        +Update(ctx, System) error
-        +Delete(ctx, UUID) error
+        +Create(systemID, hash, expiresAt) EnrollmentToken
+        +Consume(hash) EnrollmentToken
+        +Revoke(id) error
     }
-
-    class JobStore {
+    class AgentTokenStore {
         <<interface>>
-        +Create(ctx, BackupJob) error
-        +GetByID(ctx, UUID) BackupJob
-        +List(ctx) []BackupJob
-        +ListBySystemID(ctx, UUID) []BackupJob
-        +LatestByPolicyID(ctx, UUID) BackupJob
-        +Update(ctx, BackupJob) error
-        +Delete(ctx, UUID) error
+        +Create(systemID, hash) AgentToken
+        +ValidateAndTouch(hash) UUID
+        +Revoke(id) error
     }
-
-    class pgSystemStore {
-        -db DB
-        +Create()
-        +GetByID()
-        +List()
-        +Update()
-        +Delete()
-    }
-
-    class Handler {
-        -systems SystemStore
-        -repositories RepositoryStore
-        -policies PolicyStore
-        -jobs JobStore
-        -snapshots SnapshotStore
-        -log Logger
-    }
-
-    class Scheduler {
-        -policies PolicyStore
-        -jobs JobStore
-        -cron Cron
-        -log Logger
-        +Start(ctx) error
-    }
-
-    SystemStore <|.. pgSystemStore : implements
-    Handler --> SystemStore : depends on
-    Handler --> JobStore : depends on
-    Scheduler --> JobStore : depends on
+    EnrollmentTokenStore <|.. pgEnrollmentTokenStore
+    AgentTokenStore <|.. pgAgentTokenStore
+    EnrollmentToken --* EnrollmentTokenStore
+    AgentToken --* AgentTokenStore
 ```
 
 ---
 
-## 4. Sequenzdiagramm — API Request (mit Middleware-Chain)
+## 4. Klassendiagramm — Agent (DIP)
+
+```mermaid
+classDiagram
+    class ControlPlaneClient {
+        <<interface>>
+        +ListPendingJobs(ctx) []BackupJob
+        +GetPolicy(ctx, id) BackupPolicy
+        +StartJob(ctx, id) error
+        +CompleteJob(ctx, id, snapshotID, bytes, paths) error
+        +FailJob(ctx, id, reason) error
+    }
+    class Client {
+        -baseURL string
+        -token string
+        +ListPendingJobs()
+        +StartJob()
+        +CompleteJob()
+        +FailJob()
+        +Enroll(enrollmentToken) string
+    }
+    class Agent {
+        -cfg Config
+        -cp ControlPlaneClient
+        -runner Runner
+        +Run(ctx) error
+    }
+    class Runner {
+        -bin string
+        +Backup(opts) BackupResult
+    }
+    ControlPlaneClient <|.. Client
+    Agent --> ControlPlaneClient
+    Agent --> Runner
+```
+
+---
+
+## 5. Sequenzdiagramm — Enrollment Flow
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
-    participant REC as Recovery
-    participant SEC as SecurityHeaders
-    participant LIM as BodyLimit
-    participant LOG as Logging
-    participant TO as Timeout
-    participant H as Handler
-    participant S as Store
+    participant ADM as Admin
+    participant CP as Control Plane
     participant DB as PostgreSQL
+    participant A as Agent
 
-    C->>REC: HTTP Request
-    REC->>SEC: next
-    SEC->>SEC: Set 6 Security Headers
-    SEC->>LIM: next
-    LIM->>LIM: MaxBytesReader(1MB)
-    LIM->>LOG: next
-    LOG->>TO: next (start timer)
-    TO->>H: next
-    H->>S: Store.GetByID(ctx, id)
-    S->>DB: SELECT ... WHERE id = $1
-    DB-->>S: Row
-    S-->>H: *Model / ErrNotFound
-    H-->>TO: Response 200 / 404
-    TO-->>LOG: Response
-    LOG->>LOG: log method/path/status/duration
-    LOG-->>SEC: Response
-    SEC-->>C: Response + Security Headers
+    ADM->>CP: POST /v1/systems/{id}/enrollment-token
+    CP->>CP: GenerateToken() → raw (43 chars)
+    CP->>CP: HashToken(raw) → SHA-256
+    CP->>DB: INSERT agent_enrollment_tokens (hash, expires+30min)
+    CP-->>ADM: {"token": raw, "expires_at": "..."}
+    Note over ADM,CP: raw Token nur einmal ausgegeben — nie loggen
+
+    A->>CP: POST /v1/agent/enroll {"enrollment_token": raw}
+    CP->>CP: HashToken(raw)
+    CP->>DB: SELECT WHERE hash=? AND used_at IS NULL AND expires_at > NOW()
+    DB-->>CP: EnrollmentToken
+    CP->>DB: UPDATE used_at = NOW()
+    CP->>CP: GenerateToken() → agentToken
+    CP->>DB: INSERT agent_tokens (system_id, HashToken(agentToken))
+    CP-->>A: {"token": agentToken, "system_id": "..."}
+    A->>A: SaveToken("data/agent-token", agentToken, 0600)
 ```
 
 ---
 
-## 5. Sequenzdiagramm — Scheduled Job Dispatch
+## 6. Sequenzdiagramm — Gesicherter Backup-Flow
 
 ```mermaid
 sequenceDiagram
     participant CR as Cron
     participant SC as Scheduler
-    participant JS as JobStore
-    participant DB as PostgreSQL
-    participant TK as Ticker (5min)
+    participant CP as Control Plane
+    participant A as Agent
+    participant R as Restic
 
-    Note over CR: Policy-Schedule auslösen
-    CR->>SC: dispatchJob(policy)
-    SC->>JS: Create(ctx, BackupJob{status: "pending"})
-    JS->>DB: INSERT INTO backup_jobs
-    DB-->>JS: id, created_at
-    JS-->>SC: job.ID gesetzt
+    CR->>SC: Policy-Schedule auslösen
+    SC->>CP: Create BackupJob{status=pending}
 
-    Note over TK: Alle 5 Minuten
-    TK->>SC: checkDeadMan(policies)
-    loop für jede scheduled Policy
-        SC->>SC: cronInterval(schedule)
-        SC->>JS: LatestByPolicyID(ctx, policyID)
-        JS->>DB: SELECT ... ORDER BY created_at DESC LIMIT 1
-        DB-->>JS: BackupJob / ErrNotFound
-        alt Job überfällig
-            SC->>SC: slog.Warn("dead-man: overdue")
-        end
+    loop alle 30s
+        A->>CP: GET /v1/agent/jobs\nAuthorization: Bearer <token>
+        CP->>CP: HashToken → ValidateAndTouch → system_id
+        CP-->>A: [pending jobs für diese system_id]
     end
+
+    A->>CP: PUT /v1/agent/jobs/{id}/start
+    A->>R: restic init + restic backup --json
+    R-->>A: {"message_type":"summary","snapshot_id":"abc","data_added":1234}
+    A->>CP: PUT /v1/agent/jobs/{id}/complete\n{snapshot_id, bytes, paths}
+    CP->>CP: Job=success + Snapshot erstellen\n(policy.repository_id → snapshot.repository_id)
 ```
 
 ---
 
-## 6. Deploymentdiagramm — Entwicklung
+## 7. Sequenzdiagramm — AgentAuth Middleware
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant MW as AgentAuth
+    participant DB as PostgreSQL
+    participant H as Handler
+
+    A->>MW: GET /v1/agent/jobs\nAuthorization: Bearer xyz
+    MW->>MW: extractBearer("Bearer xyz") → "xyz"
+    MW->>MW: HashToken("xyz") → hash
+    MW->>DB: UPDATE agent_tokens SET last_used_at=NOW()\nWHERE hash=? AND revoked_at IS NULL\nRETURNING system_id
+    DB-->>MW: system_id (or no rows → 401)
+    MW->>H: r.WithContext(ctx + system_id)
+    H->>DB: SELECT jobs WHERE system_id=$1 AND status='pending'
+    DB-->>A: []BackupJob
+```
+
+---
+
+## 8. Deploymentdiagramm — Entwicklung
 
 ```mermaid
 graph LR
-    subgraph Developer["Entwickler-Maschine"]
-        CP[control-plane\n:8080]
-        PG[(PostgreSQL\n:5432)]
-        RD[(Redis\n:6379)]
+    subgraph Dev["Entwickler-Maschine"]
+        CP[control-plane :8080]
+        PG[(PostgreSQL :5432)]
+        RD[(Redis :6379)]
     end
-
-    CP -->|pgx/v5| PG
-    CP -->|redis| RD
-
-    DEV[make dev-up\nmake migrate-up\nmake run] --> Developer
+    subgraph Target["Zielsystem (Agent)"]
+        AG[agent\nENROLLMENT_TOKEN=...\nREStic_REPO=s3:...]
+    end
+    CP -->|pgx| PG
+    AG -->|Bearer Token| CP
+    AG -->|restic| S3[(S3/MinIO)]
 ```
 
 ---
 
-## 7. Deploymentdiagramm — Produktion (Ziel)
+## 9. Deploymentdiagramm — Produktion (Ziel)
 
 ```mermaid
 graph TB
-    subgraph Internet
-        CLI[Agent / Web-GUI]
-    end
-
     subgraph K8s["Kubernetes Cluster"]
-        ING[Ingress\nTLS 1.3]
+        ING[Ingress TLS 1.3]
         CP1[control-plane Pod 1]
         CP2[control-plane Pod 2]
-        PG[(PostgreSQL\nStatefulSet)]
-        RD[(Redis\nDeployment)]
-        PROM[Prometheus\nGrafana\nLoki]
+        PG[(PostgreSQL)]
+        RD[(Redis)]
     end
-
-    subgraph Agent["Zielsysteme"]
-        A1[Agent 1\nsystemd]
-        A2[Agent 2\nDocker]
+    subgraph Agents["Zielsysteme"]
+        A1[Agent 1\ndata/agent-token]
+        A2[Agent 2\ndata/agent-token]
     end
-
-    CLI -->|HTTPS| ING
-    A1 -->|mTLS| ING
-    A2 -->|mTLS| ING
-    ING --> CP1
-    ING --> CP2
-    CP1 --> PG
-    CP2 --> PG
-    CP1 --> RD
-    CP2 --> RD
-    PROM -.->|scrape| CP1
-    PROM -.->|scrape| CP2
+    A1 -->|Bearer Token| ING
+    A2 -->|Bearer Token| ING
+    ING --> CP1 & CP2
+    CP1 & CP2 --> PG & RD
 ```

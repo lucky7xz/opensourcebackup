@@ -32,35 +32,39 @@ git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
 
 # Start local development environment
-make dev-up
+make dev-up && make migrate-up && make run
+# → http://localhost:8080/health → {"status":"ok"}
+```
 
-# Run database migrations
-make migrate-up
+## Install Agent on a Target System
 
-# Start control plane
-make run
+```bash
+# 1. Create a system in the control plane
+curl -X POST http://localhost:8080/v1/systems \
+  -d '{"Hostname":"my-server","RiskClass":"standard"}'
+
+# 2. Generate a one-time enrollment token (valid 30 min)
+curl -X POST http://localhost:8080/v1/systems/{id}/enrollment-token
+
+# 3. Start agent — enrolls automatically, saves token to data/agent-token
+CONTROL_PLANE_URL=http://localhost:8080 \
+ENROLLMENT_TOKEN=<token> \
+RESTIC_PASSWORD=<secret> \
+RESTIC_REPO=s3:my-bucket/backups \
+./agent
 ```
 
 ## Development
 
 ```bash
-# Install dependencies
-make deps
-
-# Run unit tests
-make test
-
-# Run integration tests (requires running PostgreSQL)
-make test-integration
-
-# Lint (hard — blocks on violation)
-make lint
-
-# Lint (warn — shows issues, never blocks)
-make lint-warn
-
-# Format + lint + test in one
-make check
+make deps           # Download dependencies
+make test           # Unit tests
+make test-integration  # Integration tests (requires PostgreSQL)
+make lint           # Hard lint (blocks on violation)
+make lint-warn      # Soft lint (informational)
+make check          # fmt + lint + test
+make run            # Start control plane
+make run-agent      # Start backup agent
 ```
 
 ## Documentation

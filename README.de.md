@@ -31,36 +31,40 @@ Monitoring (Prometheus / Grafana / Alertmanager / Loki)
 git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
 
-# Lokale Entwicklungsumgebung starten
-make dev-up
+# Entwicklungsumgebung starten
+make dev-up && make migrate-up && make run
+# → http://localhost:8080/health → {"status":"ok"}
+```
 
-# Datenbank migrieren
-make migrate-up
+## Agent auf einem Zielsystem installieren
 
-# Control Plane starten
-make run
+```bash
+# 1. System in der Control Plane anlegen
+curl -X POST http://localhost:8080/v1/systems \
+  -d '{"Hostname":"mein-server","RiskClass":"standard"}'
+
+# 2. Einmal-Token erzeugen (gilt 30 Min)
+curl -X POST http://localhost:8080/v1/systems/{id}/enrollment-token
+
+# 3. Agent starten — enrollt sich automatisch
+CONTROL_PLANE_URL=http://localhost:8080 \
+ENROLLMENT_TOKEN=<token> \
+RESTIC_PASSWORD=<geheimnis> \
+RESTIC_REPO=s3:mein-bucket/backups \
+./agent
 ```
 
 ## Entwicklung
 
 ```bash
-# Abhängigkeiten installieren
-make deps
-
-# Unit-Tests ausführen
-make test
-
-# Integration-Tests (benötigt laufende PostgreSQL)
-make test-integration
-
-# Lint (hart — blockiert bei Verletzung)
-make lint
-
-# Lint (Warnungen — zeigt Baustellen, blockiert nie)
-make lint-warn
-
-# Format + Lint + Test in einem
-make check
+make deps              # Abhängigkeiten herunterladen
+make test              # Unit-Tests
+make test-integration  # Integration-Tests (PostgreSQL nötig)
+make lint              # Hart — blockiert bei Verletzung
+make lint-warn         # Weich — informativ
+make check             # fmt + lint + test
+make run               # Control Plane starten
+make run-agent         # Backup-Agent starten
 ```
 
 ## Dokumentation

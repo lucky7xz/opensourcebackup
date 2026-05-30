@@ -29,8 +29,8 @@ th{background:var(--bg-card);color:var(--accent-cyan);padding:10px 14px;text-ali
 td{padding:9px 14px;border:1px solid var(--border);color:var(--text-secondary);vertical-align:top}
 tr:nth-child(even) td{background:rgba(20,24,36,.5)}
 .warning{background:rgba(255,200,0,.07);border:1px solid rgba(255,200,0,.25);border-radius:8px;padding:14px 18px;margin:16px 0;color:#ffc800;font-size:13px}
-.badge-green{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:rgba(0,255,136,.1);color:var(--accent-green);border:1px solid rgba(0,255,136,.3)}
-.badge-red{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:rgba(255,80,80,.1);color:#ff6b6b;border:1px solid rgba(255,80,80,.3)}
+.step{background:var(--bg-card);border-left:3px solid var(--accent-cyan);padding:12px 16px;margin:8px 0;border-radius:0 8px 8px 0}
+.step-num{color:var(--accent-cyan);font-weight:700;margin-right:8px}
 </style>
 </head>
 <body>
@@ -38,193 +38,141 @@ tr:nth-child(even) td{background:rgba(20,24,36,.5)}
   <div class="sidebar-title">User Guide</div>
   <a href="#overview">Übersicht</a>
   <a href="#starten">Starten</a>
+  <a href="#enrollment">Agent einrichten</a>
   <a href="#systeme">Systeme</a>
-  <a class="sub" href="#system-anlegen">Anlegen</a>
-  <a class="sub" href="#system-abrufen">Abrufen</a>
   <a href="#repositories">Repositories</a>
   <a href="#policies">Policies</a>
   <a href="#jobs">Jobs</a>
   <a href="#snapshots">Snapshots</a>
   <a href="#scheduler">Scheduler</a>
-  <a href="#statuscodes">HTTP-Statuscodes</a>
+  <a href="#statuscodes">Statuscodes</a>
   <a href="#faq">FAQ</a>
-  <a href="#datenschutz">Sicherheitshinweise</a>
+  <a href="#security">Sicherheitshinweise</a>
 </nav>
 <main class="content">
-  <h1>User Guide<br><span class="sub">OpensourceBackup Control Plane — B1–B7</span></h1>
-
-  <div class="warning">⚠️ Aktuelle Version (B1–B7): Keine Authentifizierung. Nicht für Produktionseinsatz verwenden.</div>
+  <h1>User Guide<br><span class="sub">OpensourceBackup — Stand B1–B9.7</span></h1>
 
   <h2 id="overview">Was ist OpensourceBackup?</h2>
-  <p>OpensourceBackup ist eine <strong>Backup Control Plane</strong> — eine zentrale Plattform zur Verwaltung, Überwachung und Koordination von Backup-Jobs auf vielen Systemen gleichzeitig.</p>
-  <pre><code>Deine Systeme → Backup-Agent → Control Plane → Storage
-                                     ↑
-                               Du steuerst hier</code></pre>
-  <p><strong>Was du damit tust:</strong> Systeme registrieren, Repositories definieren, Policies anlegen, Jobs überwachen, Snapshots verwalten.</p>
+  <p>OpensourceBackup sichert Dateien, Ordner und Datenbanken auf deinen Servern und Clients — zentral verwaltet, automatisch überwacht.</p>
+  <pre><code>Control Plane (zentral)
+  → verwaltet Systeme, Policies, Jobs, Snapshots
+  → plant Backups (Cron) + überwacht (Dead-Man's-Switch)
 
-  <h2 id="starten">Starten</h2>
-  <pre><code>git clone https://github.com/cerberus8484/opensourcebackup.git
-cd opensourcebackup
+Agent (auf jedem Zielsystem)
+  → holt Jobs → führt restic backup aus → meldet zurück</code></pre>
+  <p><strong>Was du sichern kannst:</strong> Dateien &amp; Ordner, PostgreSQL (pgBackRest), komplette Systeme (Restic), Kubernetes (Velero).</p>
 
-make dev-up        # PostgreSQL + Redis (Docker)
-make migrate-up    # Datenbanktabellen anlegen
-make run           # → http://localhost:8080
+  <h2 id="starten">Control Plane starten</h2>
+  <pre><code>make dev-up && make migrate-up && make run
+curl http://localhost:8080/health  # → {"status":"ok"}</code></pre>
 
-curl http://localhost:8080/health
-# → {"status":"ok"}</code></pre>
-
-  <h2 id="systeme">Systeme <code>/v1/systems</code></h2>
-  <p>Ein System ist ein zu sicherndes Gerät: Server, VM, Datenbank oder Endgerät.</p>
-
-  <h3 id="system-anlegen">System anlegen</h3>
+  <h2 id="enrollment">Agent auf einem Zielsystem einrichten</h2>
+  <div class="step"><span class="step-num">1.</span> System anlegen</div>
   <pre><code>curl -X POST http://localhost:8080/v1/systems \
   -H "Content-Type: application/json" \
-  -d '{
-    "Hostname": "web-server-01.example.com",
-    "OS": "Ubuntu 22.04",
-    "RiskClass": "critical",
-    "Tags": {"env": "prod", "team": "backend"}
-  }'</code></pre>
-  <table>
-    <tr><th>Feld</th><th>Pflicht</th><th>Beschreibung</th></tr>
-    <tr><td><code>Hostname</code></td><td><span class="badge-green">✅</span></td><td>Eindeutiger Hostname</td></tr>
-    <tr><td><code>OS</code></td><td>—</td><td>Betriebssystem</td></tr>
-    <tr><td><code>RiskClass</code></td><td>—</td><td><code>standard</code> (Default) oder <code>critical</code></td></tr>
-    <tr><td><code>Tags</code></td><td>—</td><td>Freie Key-Value-Metadaten (JSON)</td></tr>
-  </table>
+  -d '{"Hostname":"mein-server","RiskClass":"standard"}'
+# → {"ID":"uuid-des-systems",...}</code></pre>
+  <div class="step"><span class="step-num">2.</span> Enrollment-Token erzeugen (gilt 30 Min)</div>
+  <pre><code>curl -X POST http://localhost:8080/v1/systems/{uuid}/enrollment-token
+# → {"token":"Xk3mNp...","expires_at":"..."}</code></pre>
+  <div class="step"><span class="step-num">3.</span> Agent starten — enrollt sich automatisch</div>
+  <pre><code>CONTROL_PLANE_URL=http://localhost:8080 \
+ENROLLMENT_TOKEN=Xk3mNp... \
+RESTIC_PASSWORD=geheimes-passwort \
+RESTIC_REPO=s3:mein-bucket/backups/mein-server \
+./agent
+# Token wird in data/agent-token gespeichert
+# Agent pollt ab jetzt alle 30s nach Jobs</code></pre>
+  <p>Beim nächsten Start genügt <code>AGENT_TOKEN_FILE=data/agent-token</code> — kein Enrollment-Token mehr nötig.</p>
 
-  <h3 id="system-abrufen">Systeme abrufen &amp; verwalten</h3>
-  <pre><code>GET    /v1/systems          # alle Systeme
-GET    /v1/systems/{id}     # ein System
-PUT    /v1/systems/{id}     # aktualisieren
-DELETE /v1/systems/{id}     # löschen → HTTP 204</code></pre>
+  <h2 id="systeme">Systeme <code>/v1/systems</code></h2>
+  <pre><code>POST   /v1/systems               {"Hostname":"...","RiskClass":"standard|critical"}
+GET    /v1/systems               alle Systeme
+GET    /v1/systems/{id}          ein System
+PUT    /v1/systems/{id}          aktualisieren
+DELETE /v1/systems/{id}          löschen → 204</code></pre>
 
   <h2 id="repositories">Repositories <code>/v1/repositories</code></h2>
-  <p>Ein Repository ist ein Backup-Speicherziel (S3-Bucket, MinIO, ZFS-Dataset).</p>
   <pre><code>curl -X POST http://localhost:8080/v1/repositories \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Type": "restic",
-    "Location": "s3:mein-bucket/backups/web-01",
-    "EncryptionMode": "aes256",
-    "ObjectLockEnabled": true
-  }'</code></pre>
+  -d '{"Type":"restic","Location":"s3:bucket/backups","ObjectLockEnabled":true}'</code></pre>
   <table>
-    <tr><th>Feld</th><th>Pflicht</th><th>Beschreibung</th></tr>
-    <tr><td><code>Type</code></td><td><span class="badge-green">✅</span></td><td><code>restic</code>, <code>borg</code>, <code>pgbackrest</code>, <code>velero</code></td></tr>
-    <tr><td><code>Location</code></td><td><span class="badge-green">✅</span></td><td>Pfad oder URL zum Storage</td></tr>
-    <tr><td><code>EncryptionMode</code></td><td>—</td><td>Verschlüsselungsmodus</td></tr>
-    <tr><td><code>ObjectLockEnabled</code></td><td>—</td><td>WORM-Schutz gegen Ransomware</td></tr>
+    <tr><th>Feld</th><th>Pflicht</th><th>Werte</th></tr>
+    <tr><td>Type</td><td>✅</td><td>restic, borg, pgbackrest, velero</td></tr>
+    <tr><td>Location</td><td>✅</td><td>s3:bucket, sftp:host:/path, /local/path</td></tr>
+    <tr><td>ObjectLockEnabled</td><td>—</td><td>WORM-Schutz gegen Ransomware</td></tr>
   </table>
 
   <h2 id="policies">Policies <code>/v1/policies</code></h2>
-  <p>Eine Policy definiert: was wird gesichert, wann, mit welcher Engine, wie lange aufbewahrt.</p>
   <pre><code>curl -X POST http://localhost:8080/v1/policies \
-  -H "Content-Type: application/json" \
   -d '{
-    "Name": "nightly-full-backup",
+    "Name": "nightly",
     "Engine": "restic",
-    "Includes": ["/home", "/etc", "/var/www"],
+    "RepositoryID": "uuid-des-repositories",
+    "Includes": ["/home","/etc"],
     "Excludes": ["/home/*/.cache"],
     "Schedule": "0 2 * * *",
-    "Retention": {"daily": 7, "weekly": 4, "monthly": 12}
+    "Retention": {"daily":7,"weekly":4,"monthly":12}
   }'</code></pre>
-  <table>
-    <tr><th>Feld</th><th>Pflicht</th><th>Beschreibung</th></tr>
-    <tr><td><code>Name</code></td><td><span class="badge-green">✅</span></td><td>Eindeutiger Name</td></tr>
-    <tr><td><code>Engine</code></td><td><span class="badge-green">✅</span></td><td><code>restic</code>, <code>borg</code>, <code>pgbackrest</code>, <code>velero</code></td></tr>
-    <tr><td><code>Schedule</code></td><td>—</td><td>Cron-Ausdruck: <code>0 2 * * *</code> = täglich 02:00</td></tr>
-    <tr><td><code>Retention</code></td><td>—</td><td>Aufbewahrungsregeln: <code>{"daily":7,"weekly":4}</code></td></tr>
-  </table>
-  <h3>Cron-Beispiele</h3>
+  <div class="warning">⚠️ RepositoryID muss gesetzt sein — sonst schlägt jeder Backup-Job fehl.</div>
   <table>
     <tr><th>Schedule</th><th>Bedeutung</th></tr>
     <tr><td><code>0 2 * * *</code></td><td>Täglich 02:00 Uhr</td></tr>
-    <tr><td><code>0 2 * * 0</code></td><td>Wöchentlich, Sonntags 02:00</td></tr>
     <tr><td><code>0 */6 * * *</code></td><td>Alle 6 Stunden</td></tr>
-    <tr><td><code>@daily</code></td><td>Einmal täglich</td></tr>
+    <tr><td><code>0 2 * * 0</code></td><td>Wöchentlich, Sonntags</td></tr>
   </table>
 
   <h2 id="jobs">Jobs <code>/v1/jobs</code></h2>
-  <p>Ein Job ist eine ausgeführte oder geplante Backup-Instanz.</p>
-  <pre><code>curl -X POST http://localhost:8080/v1/jobs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "SystemID": "uuid-des-systems",
-    "PolicyID": "uuid-der-policy",
-    "Status": "pending"
-  }'</code></pre>
+  <pre><code>GET /v1/jobs                              alle Jobs
+GET /v1/jobs?system_id={id}&status=pending  pending Jobs für System</code></pre>
   <table>
     <tr><th>Status</th><th>Bedeutung</th></tr>
-    <tr><td><code>pending</code></td><td>Warte auf Agent</td></tr>
-    <tr><td><code>running</code></td><td>Agent führt Backup aus</td></tr>
-    <tr><td><code>success</code></td><td>Backup erfolgreich</td></tr>
-    <tr><td><code>failed</code></td><td>Backup fehlgeschlagen</td></tr>
-    <tr><td><code>warning</code></td><td>Backup mit Warnungen</td></tr>
+    <tr><td>pending</td><td>Wartet auf Agent</td></tr>
+    <tr><td>running</td><td>Backup läuft</td></tr>
+    <tr><td>success</td><td>Erfolgreich abgeschlossen</td></tr>
+    <tr><td>failed</td><td>Fehlgeschlagen</td></tr>
   </table>
 
   <h2 id="snapshots">Snapshots <code>/v1/snapshots</code></h2>
-  <p>Ein Snapshot ist das Ergebnis eines erfolgreichen Backup-Jobs.</p>
-  <pre><code>curl -X POST http://localhost:8080/v1/snapshots \
-  -H "Content-Type: application/json" \
-  -d '{
-    "JobID": "uuid-des-jobs",
-    "RepositoryID": "uuid-des-repositories",
-    "EngineSnapshotID": "abc123def456",
-    "Hostname": "web-server-01",
-    "Paths": ["/home", "/etc"],
-    "ChecksumStatus": "verified"
-  }'</code></pre>
+  <pre><code>GET /v1/snapshots         alle Snapshots
+GET /v1/snapshots/{id}   ein Snapshot</code></pre>
+  <p>Snapshots werden automatisch vom Agent beim <code>complete</code>-Aufruf registriert — mit <code>repository_id</code> aus der Policy.</p>
 
   <h2 id="scheduler">Scheduler &amp; Dead-Man's-Switch</h2>
-  <p>Der Scheduler lädt beim Start alle Policies mit Cron-Schedule und plant automatisch Backup-Jobs. Der <strong>Dead-Man's-Switch</strong> prüft alle 5 Minuten ob alle Policies fristgerecht ausgeführt wurden:</p>
-  <pre><code>{"level":"WARN","msg":"dead-man: overdue job detected",
- "policy_name":"nightly-full-backup",
- "last_job_at":"2024-01-01T02:00:00Z"}</code></pre>
+  <p>Cron-Jobs werden automatisch als <code>pending</code>-Jobs erstellt. Alle 5 Minuten prüft der Dead-Man's-Switch ob Jobs termingerecht gelaufen sind:</p>
+  <pre><code>{"level":"WARN","msg":"dead-man: overdue job detected","policy_name":"nightly"}</code></pre>
 
   <h2 id="statuscodes">HTTP-Statuscodes</h2>
   <table>
     <tr><th>Code</th><th>Bedeutung</th></tr>
-    <tr><td><code>200</code></td><td>Erfolgreich</td></tr>
-    <tr><td><code>201</code></td><td>Ressource angelegt</td></tr>
-    <tr><td><code>204</code></td><td>Gelöscht</td></tr>
-    <tr><td><code>400</code></td><td>Ungültige Eingabe</td></tr>
-    <tr><td><code>404</code></td><td>Nicht gefunden</td></tr>
-    <tr><td><code>413</code></td><td>Request Body &gt; 1 MB</td></tr>
-    <tr><td><code>503</code></td><td>Timeout oder DB nicht erreichbar</td></tr>
+    <tr><td>200 / 201 / 204</td><td>Erfolgreich / Angelegt / Gelöscht</td></tr>
+    <tr><td>400</td><td>Ungültige Eingabe</td></tr>
+    <tr><td>401</td><td>Kein oder ungültiger Bearer-Token</td></tr>
+    <tr><td>404</td><td>Nicht gefunden (auch: fremdes System bei Agent-Routen)</td></tr>
+    <tr><td>413</td><td>Request Body &gt; 1 MB</td></tr>
+    <tr><td>503</td><td>DB nicht erreichbar oder Timeout</td></tr>
   </table>
 
-  <h2 id="faq">Häufige Fragen</h2>
-  <h3>Warum keine Anmeldung?</h3>
-  <p>Auth kommt in B9. Aktuelle Version ist nur für Entwicklung geeignet — nicht für Produktion.</p>
-  <h3>DB-Verbindung prüfen</h3>
-  <pre><code>curl http://localhost:8080/health
-# {"status":"ok"}   → DB erreichbar
-# HTTP 503          → DB nicht erreichbar</code></pre>
-  <h3>Alles zurücksetzen</h3>
-  <pre><code>make migrate-down  # Tabellen löschen
-make migrate-up    # Neu anlegen</code></pre>
+  <h2 id="faq">FAQ</h2>
+  <h3>Agent meldet "re-enrollment required"?</h3>
+  <p>Token wurde revoked. Neuen Enrollment-Token erstellen und Agent neu starten mit <code>ENROLLMENT_TOKEN=...</code>.</p>
+  <h3>Backup schlägt fehl: "policy has no repository"?</h3>
+  <pre><code>curl -X PUT /v1/policies/{id} -d '{"RepositoryID":"uuid-des-repositories",...}'</code></pre>
+  <h3>Alles zurücksetzen:</h3>
+  <pre><code>make migrate-down && make migrate-up</code></pre>
 
-  <h2 id="datenschutz">Sicherheitshinweise</h2>
-  <ul style="color:var(--text-secondary);padding-left:20px;line-height:2">
-    <li>Keine Produktionsdaten in der aktuellen Version speichern (keine Auth)</li>
-    <li><code>DATABASE_URL</code> enthält Credentials — niemals in Logs ausgeben</li>
-    <li><code>.env.local</code> niemals committen — ist in <code>.gitignore</code></li>
-    <li>Jeder API-Endpunkt gibt Security Headers zurück (CSP, X-Frame-Options, HSTS, …)</li>
+  <h2 id="security">Sicherheitshinweise</h2>
+  <ul style="color:var(--text-secondary);padding-left:20px;line-height:2.2">
+    <li>Agent-Token in <code>data/agent-token</code> mit Rechten <code>0600</code></li>
+    <li>Enrollment-Token gilt nur 30 Minuten und nur einmal</li>
+    <li><code>RESTIC_PASSWORD</code> und <code>DATABASE_URL</code> niemals in Logs</li>
+    <li>Jede Response enthält automatisch Security Headers (CSP, HSTS, X-Frame, …)</li>
+    <li>Agent sieht nur Jobs des eigenen Systems — kein Cross-System-Zugriff möglich</li>
   </ul>
 </main>
 <script>
-const links = document.querySelectorAll('.sidebar a');
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(e => {
-    if(e.isIntersecting){
-      links.forEach(l => l.classList.remove('active'));
-      const a = document.querySelector('.sidebar a[href="#'+e.target.id+'"]');
-      if(a) a.classList.add('active');
-    }
-  });
-},{threshold:.3});
-document.querySelectorAll('h2[id],h3[id]').forEach(h => observer.observe(h));
+const links=document.querySelectorAll('.sidebar a');
+const obs=new IntersectionObserver(e=>{e.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove('active'));const a=document.querySelector('.sidebar a[href="#'+e.target.id+'"]');if(a)a.classList.add('active');}})},{threshold:.3});
+document.querySelectorAll('h2[id],h3[id]').forEach(h=>obs.observe(h));
 </script>
 </body>
 </html>

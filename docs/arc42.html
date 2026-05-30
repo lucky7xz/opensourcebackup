@@ -14,12 +14,11 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .sidebar-title{padding:0 20px 16px;font-size:13px;font-weight:700;color:var(--accent-cyan);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);margin-bottom:12px}
 .sidebar a{display:block;padding:7px 20px;color:var(--text-secondary);text-decoration:none;font-size:13px;transition:all .15s;border-left:2px solid transparent}
 .sidebar a:hover,.sidebar a.active{color:var(--accent-cyan);border-left-color:var(--accent-cyan);background:rgba(0,212,255,.05)}
-.sidebar .sub{padding-left:32px;font-size:12px}
 .content{flex:1;padding:48px 56px;max-width:900px}
 h1{font-size:28px;font-weight:700;color:var(--accent-cyan);margin-bottom:8px}
 h1 .sub{font-size:14px;color:var(--text-secondary);font-weight:400}
 h2{font-size:20px;font-weight:600;color:var(--accent-cyan);margin:40px 0 16px;padding-top:8px;border-top:1px solid var(--border)}
-h3{font-size:15px;font-weight:600;color:var(--accent-green);margin:24px 0 10px}
+h3{font-size:15px;font-weight:600;color:var(--accent-green);margin:20px 0 8px}
 p{color:var(--text-secondary);line-height:1.7;margin-bottom:12px}
 code{font-family:var(--font-mono);background:#0a1628;color:var(--accent-cyan);padding:2px 7px;border-radius:4px;font-size:13px}
 pre{background:#0a1628;border:1px solid var(--border);border-radius:8px;padding:20px;overflow-x:auto;margin:16px 0}
@@ -28,18 +27,14 @@ table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
 th{background:var(--bg-card);color:var(--accent-cyan);padding:10px 14px;text-align:left;font-weight:600;border:1px solid var(--border)}
 td{padding:9px 14px;border:1px solid var(--border);color:var(--text-secondary);vertical-align:top}
 tr:nth-child(even) td{background:rgba(20,24,36,.5)}
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin:0 2px}
-.badge-green{background:rgba(0,255,136,.1);color:var(--accent-green);border:1px solid rgba(0,255,136,.3)}
-.badge-red{background:rgba(255,80,80,.1);color:#ff6b6b;border:1px solid rgba(255,80,80,.3)}
-.badge-yellow{background:rgba(255,200,0,.1);color:#ffc800;border:1px solid rgba(255,200,0,.3)}
-.badge-blue{background:rgba(0,212,255,.1);color:var(--accent-cyan);border:1px solid rgba(0,212,255,.3)}
-.card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:20px;margin:16px 0}
-hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.badge-green{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:rgba(0,255,136,.1);color:var(--accent-green);border:1px solid rgba(0,255,136,.3)}
+.badge-red{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:rgba(255,80,80,.1);color:#ff6b6b;border:1px solid rgba(255,80,80,.3)}
+.badge-yellow{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:rgba(255,200,0,.1);color:#ffc800;border:1px solid rgba(255,200,0,.3)}
 </style>
 </head>
 <body>
 <nav class="sidebar">
-  <div class="sidebar-title">Arc42 — OpensourceBackup</div>
+  <div class="sidebar-title">Arc42 — B1–B9.7</div>
   <a href="#einfuehrung">1. Einführung & Ziele</a>
   <a href="#randbedingungen">2. Randbedingungen</a>
   <a href="#kontext">3. Kontextabgrenzung</a>
@@ -54,117 +49,107 @@ hr{border:none;border-top:1px solid var(--border);margin:32px 0}
   <a href="#glossar">12. Glossar</a>
 </nav>
 <main class="content">
-  <h1>Arc42 Architektur<br><span class="sub">OpensourceBackup — Stand B1–B7</span></h1>
+  <h1>Arc42 Architektur<br><span class="sub">OpensourceBackup — Stand B1–B9.7</span></h1>
 
   <h2 id="einfuehrung">1. Einführung und Ziele</h2>
-  <p>OpensourceBackup ist eine <strong>Backup Control Plane</strong> — kein neues Backup-Tool, sondern eine Plattform zur Orchestrierung bewährter Backup-Engines (Restic, Borg, pgBackRest, Velero) über 100+ Systeme.</p>
+  <p>OpensourceBackup orchestriert Restic, Borg, pgBackRest und Velero über 100+ Systeme. Der Agent läuft auf Zielsystemen, führt Backups aus und kommuniziert sicher über Bearer-Token-Authentifizierung.</p>
   <table><tr><th>Priorität</th><th>Ziel</th></tr>
-  <tr><td>1</td><td>Zentrales Management von Backup-Jobs für heterogene Systeme</td></tr>
-  <tr><td>2</td><td>Automatische Verifikation der Restore-Integrität</td></tr>
-  <tr><td>3</td><td>Dead-Man's-Switch: Alert wenn erwartete Jobs ausbleiben</td></tr>
-  <tr><td>4</td><td>Betrieb auf Kubernetes und Docker Compose</td></tr>
-  </table>
-  <table><tr><th>Qualitätsmerkmal</th><th>Beschreibung</th></tr>
-  <tr><td>Korrektheit</td><td>Backup-Daten zuverlässig verarbeiten</td></tr>
-  <tr><td>Sicherheit</td><td>mTLS, RBAC, Security Headers, keine Credentials im Code</td></tr>
-  <tr><td>Wandelbarkeit</td><td>CCD-Prinzipien, Interface-basiert, testgetrieben</td></tr>
-  <tr><td>Betriebsbereitschaft</td><td>Graceful Shutdown, Health-Endpoint, Middleware-Chain</td></tr>
+  <tr><td>1</td><td>Zentrales Management für heterogene Systeme</td></tr>
+  <tr><td>2</td><td>Automatische Restore-Verifikation</td></tr>
+  <tr><td>3</td><td>Dead-Man's-Switch bei ausbleibenden Jobs</td></tr>
+  <tr><td>4</td><td>Sicherer Agent-Flow: Enrollment → Bearer Token → geschützte Routen</td></tr>
   </table>
 
   <h2 id="randbedingungen">2. Randbedingungen</h2>
   <table><tr><th>Randbedingung</th><th>Begründung</th></tr>
-  <tr><td>Go 1.22+</td><td>Single Binary, Cross-Compilation, Concurrency</td></tr>
-  <tr><td>PostgreSQL 16</td><td>JSONB, UUID, Arrays, FK-Constraints</td></tr>
-  <tr><td>Docker + Kubernetes</td><td>Standard-Betriebsumgebung</td></tr>
-  <tr><td>Apache 2.0 Lizenz</td><td>Open-Source</td></tr>
-  <tr><td>Conventional Commits</td><td>Automatisches Changelog</td></tr>
+  <tr><td>Go 1.22+</td><td>Single Binary, Cross-Compilation</td></tr>
+  <tr><td>PostgreSQL 16</td><td>JSONB, UUID, FK-Constraints</td></tr>
+  <tr><td>Apache 2.0</td><td>Open-Source</td></tr>
   </table>
 
   <h2 id="kontext">3. Kontextabgrenzung</h2>
-  <pre><code>┌─────────────────────────────────────────────────────────┐
-│                    OpensourceBackup                      │
-│                                                          │
-│  ┌──────────┐   REST API   ┌──────────────────────────┐ │
-│  │ Web-GUI  │◄────────────►│     Control Plane        │ │
-│  └──────────┘              │  Scheduler · Catalog     │ │
-│                            │  API · Policy Engine     │ │
-│  ┌──────────┐   mTLS/HTTPS └────────────┬─────────────┘ │
-│  │  Agent   │◄───────────────────────────┘               │
-│  └──────────┘                                            │
-└─────────────────────────────────────────────────────────┘
-         │ orchestriert
-  Restic / Borg / pgBackRest / Velero
-         │ schreibt auf
-  ZFS / MinIO / S3 / GCS / Azure</code></pre>
+  <pre><code>Web-GUI / Admin  ──────────► Control Plane ◄──── Bearer Token ── Agent
+                  REST API    (API + Auth +         (polls jobs,
+                              Scheduler +            runs restic)
+                              Catalog)
+                                  │
+                            PostgreSQL + Redis</code></pre>
 
   <h2 id="strategie">4. Lösungsstrategie</h2>
   <table><tr><th>Entscheidung</th><th>Begründung</th></tr>
-  <tr><td>Go für Agent + Server</td><td>Single Binary, Cross-Compilation</td></tr>
-  <tr><td>PostgreSQL als Katalog</td><td>JSONB für flexible Metadaten</td></tr>
-  <tr><td>Restic als Standard-Engine</td><td>Deduplizierung, Verschlüsselung, aktive Community</td></tr>
-  <tr><td>stdlib net/http</td><td>Kein Framework-Overhead, Go 1.22 Pattern-Routing</td></tr>
-  <tr><td>Interface-basierter DB-Zugriff</td><td>Testbarkeit mit Stubs, DIP-konform</td></tr>
+  <tr><td>SHA-256 Token-Hashes</td><td>Sicher für 256-bit zufällige Tokens</td></tr>
+  <tr><td>Bearer-Token (MVP)</td><td>Einfacher Einstieg; mTLS kommt in B16</td></tr>
+  <tr><td>Interface ControlPlaneClient</td><td>DIP — Agent testbar ohne HTTP</td></tr>
+  <tr><td>OTP Enrollment</td><td>Token einmalig, TTL 30 Min</td></tr>
   </table>
 
   <h2 id="bausteine">5. Bausteinsicht</h2>
-  <h3>Ebene 1</h3>
-  <pre><code>opensourcebackup/
-├── cmd/control-plane/     # Einstiegspunkt: HTTP-Server + Scheduler
-├── internal/
-│   ├── api/               # HTTP-Handler, Middleware, Routing
-│   ├── catalog/           # DB-Stores für alle 5 Entitäten
-│   └── scheduler/         # Cron-Dispatcher + Dead-Man's-Switch
-└── migrations/            # SQL-Migrationen 001–005</code></pre>
-  <h3>internal/api</h3>
-  <table><tr><th>Baustein</th><th>Verantwortlichkeit</th></tr>
-  <tr><td><code>middleware.go</code></td><td>Recovery, SecurityHeaders, BodyLimit, Logging, Timeout, Chain</td></tr>
-  <tr><td><code>handler.go</code></td><td>Handler-Struct, DI, decode(), ErrBodyTooLarge</td></tr>
-  <tr><td><code>routes.go</code></td><td>URL-Pattern → Handler-Mapping</td></tr>
-  <tr><td><code>systems.go</code></td><td>CRUD /v1/systems</td></tr>
-  <tr><td><code>jobs.go</code></td><td>CRUD /v1/jobs</td></tr>
-  <tr><td><code>snapshots.go</code></td><td>CRD /v1/snapshots</td></tr>
-  </table>
-  <h3>internal/catalog</h3>
-  <table><tr><th>Baustein</th><th>Verantwortlichkeit</th></tr>
-  <tr><td><code>models.go</code></td><td>System, BackupRepository, BackupPolicy, BackupJob, Snapshot</td></tr>
-  <tr><td><code>errors.go</code></td><td>ErrNotFound, ErrConflict</td></tr>
-  <tr><td><code>systems.go … snapshots.go</code></td><td>Store-Interfaces + pgx-Implementierungen</td></tr>
+  <pre><code>cmd/control-plane/  → HTTP-Server + Scheduler + Auth
+cmd/agent/          → Enrollment-Flow + Poll-Loop
+
+internal/
+├── api/           Handler, Middleware, AgentAuth, Enrollment, Agent-Routen
+├── auth/          GenerateToken, HashToken, EnrollmentStore, AgentTokenStore
+├── agent/         Agent, ControlPlaneClient Interface, Restic Runner, TokenFile
+│   ├── client/    HTTP-Client /v1/agent/* mit Bearer-Token
+│   └── restic/    Restic-Wrapper: init, backup --json, parse
+├── catalog/       5 Store-Interfaces + pgx-Implementierungen
+└── scheduler/     Cron + Dead-Man's-Switch</code></pre>
+
+  <h3>Neue Pakete seit B7</h3>
+  <table><tr><th>Paket</th><th>Inhalt</th></tr>
+  <tr><td><code>internal/auth</code></td><td>Token-Hashing, OTP-Enrollment, Agent-Bearer-Token</td></tr>
+  <tr><td><code>internal/agent</code></td><td>Poll-Loop, Job-Orchestrierung, 401-Handling</td></tr>
+  <tr><td><code>internal/agent/client</code></td><td>HTTP-Client für /v1/agent/* Routen</td></tr>
+  <tr><td><code>internal/agent/restic</code></td><td>Restic-Wrapper (init + backup --json)</td></tr>
+  <tr><td><code>cmd/agent</code></td><td>Agent-Binary mit Enrollment-Flow</td></tr>
   </table>
 
   <h2 id="laufzeit">6. Laufzeitsicht</h2>
-  <h3>API-Request</h3>
-  <pre><code>HTTP Request
-  → Recovery        (panic-safe)
-  → SecurityHeaders (6 HTTP Security Headers)
-  → BodyLimit 1MB   (413 bei Überschreitung)
-  → Logging         (method, path, status, duration_ms)
-  → Timeout 30s     (503 bei Überschreitung)
-  → Handler → Store → PostgreSQL
-  ← JSON Response</code></pre>
-  <h3>Dead-Man's-Switch</h3>
-  <pre><code>Ticker alle 5 Minuten
-  → für jede Policy mit Schedule:
-      → cronInterval(schedule) → erwartetes Intervall
-      → JobStore.LatestByPolicyID()
-      → wenn last_job älter als Intervall × 1.5:
-          → slog.Warn("dead-man: overdue job detected")</code></pre>
+  <h3>Enrollment</h3>
+  <pre><code>Admin: POST /v1/systems/{id}/enrollment-token
+  → GenerateToken() → HashToken() → DB (TTL 30 Min)
+  → raw Token einmal zurückgeben (nie loggen)
+
+Agent: POST /v1/agent/enroll {enrollment_token}
+  → Hash prüfen: nicht abgelaufen, nicht benutzt
+  → used_at setzen
+  → neuen Agent-Token erzeugen → Hash speichern
+  → in data/agent-token (0600) speichern</code></pre>
+  <h3>Gesicherter Backup-Flow</h3>
+  <pre><code>Cron → BackupJob{pending} in DB
+
+Agent pollt GET /v1/agent/jobs + Bearer Token
+  → AgentAuth: HashToken → ValidateAndTouch → system_id
+  → nur eigene Jobs sichtbar
+
+PUT /v1/agent/jobs/{id}/start
+restic backup --json
+PUT /v1/agent/jobs/{id}/complete {snapshot_id, bytes, paths}
+  → Job=success + Snapshot mit policy.repository_id</code></pre>
 
   <h2 id="verteilung">7. Verteilungssicht</h2>
-  <h3>Entwicklung</h3>
-  <pre><code>make dev-up      → PostgreSQL:5432 + Redis:6379 (Docker)
-make migrate-up  → Schema anlegen
-make run         → Control Plane :8080</code></pre>
-  <h3>Produktion (Ziel)</h3>
-  <pre><code>Kubernetes: Ingress (TLS) → control-plane (2+ Pods) → PostgreSQL StatefulSet
-Agent → mTLS → Ingress → Control Plane</code></pre>
+  <pre><code>Entwicklung:
+  make dev-up + make migrate-up + make run → Control Plane :8080
+  ENROLLMENT_TOKEN=... make run-agent → Agent auf Zielsystem
+
+Produktion:
+  Kubernetes: Ingress (TLS) → control-plane Pods → PostgreSQL
+  Agent → Bearer Token → Ingress</code></pre>
 
   <h2 id="querschnitt">8. Querschnittliche Konzepte</h2>
-  <table><tr><th>Konzept</th><th>Umsetzung</th></tr>
-  <tr><td>Fehlerbehandlung</td><td>ErrNotFound→404, ErrConflict→409, Panic→500</td></tr>
-  <tr><td>Logging</td><td>Strukturiertes JSON via log/slog</td></tr>
-  <tr><td>Testing</td><td>Unit mit httptest+Stubs, Integration mit echter PostgreSQL</td></tr>
-  <tr><td>Security Headers</td><td>6 Headers via Middleware: CSP, HSTS, X-Frame, …</td></tr>
-  <tr><td>Lint</td><td>golangci-lint v2, zwei Schichten (hard/warn)</td></tr>
+  <h3>Security (aktuell)</h3>
+  <table><tr><th>Maßnahme</th><th>Status</th></tr>
+  <tr><td>Security Headers (6)</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>Request Body Limit 1 MB</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>SQL parametrisiert</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>Token-Hashes (SHA-256)</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>Tokens nie geloggt</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>Bearer Token Auth</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>Agent sieht nur eigene Jobs</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>OTP Enrollment</td><td><span class="badge-green">✅</span></td></tr>
+  <tr><td>TLS / mTLS</td><td><span class="badge-red">❌ B16</span></td></tr>
+  <tr><td>Rate Limiting</td><td><span class="badge-red">❌ offen</span></td></tr>
   </table>
 
   <h2 id="entscheidungen">9. Architekturentscheidungen</h2>
@@ -176,26 +161,26 @@ Agent → mTLS → Ingress → Control Plane</code></pre>
 
   <h2 id="qualitaet">10. Qualitätsanforderungen</h2>
   <table><tr><th>Szenario</th><th>Maßnahme</th></tr>
+  <tr><td>Token revoked</td><td>Agent stoppt, loggt "re-enrollment required"</td></tr>
+  <tr><td>Fremder Job-Zugriff</td><td>404 statt 403 — kein Info-Leak</td></tr>
+  <tr><td>Policy ohne Repository</td><td>Job=failed mit Erklärung</td></tr>
   <tr><td>Job bleibt aus</td><td>Dead-Man's-Switch → Warn-Log</td></tr>
-  <tr><td>DB bricht ab</td><td>pgxpool reconnect, /health gibt 503</td></tr>
-  <tr><td>Panic im Handler</td><td>Recovery → 500, Server läuft weiter</td></tr>
-  <tr><td>Zu großer Request</td><td>BodyLimit → 413</td></tr>
-  <tr><td>Langsamer Handler</td><td>Timeout → 503</td></tr>
+  <tr><td>Transiente Netzfehler</td><td>Agent pollt weiter</td></tr>
   </table>
 
   <h2 id="risiken">11. Risiken</h2>
-  <table><tr><th>Risiko</th><th>Status</th><th>Maßnahme</th></tr>
-  <tr><td>API ohne Auth</td><td><span class="badge badge-red">❌ Produktion blockiert</span></td><td>B9</td></tr>
-  <tr><td>Kein TLS</td><td><span class="badge badge-red">❌ Produktion blockiert</span></td><td>B9</td></tr>
-  <tr><td>noctx false-positive in Tests</td><td><span class="badge badge-yellow">🔧 warn</span></td><td>dokumentiert</td></tr>
+  <table><tr><th>Risiko</th><th>Status</th></tr>
+  <tr><td>Kein TLS</td><td><span class="badge-red">❌ Produktion blockiert</span></td></tr>
+  <tr><td>Kein Rate Limiting</td><td><span class="badge-red">❌ offen</span></td></tr>
+  <tr><td>Restore nicht implementiert</td><td><span class="badge-yellow">📋 B13</span></td></tr>
   </table>
 
   <h2 id="glossar">12. Glossar</h2>
   <table><tr><th>Begriff</th><th>Bedeutung</th></tr>
-  <tr><td>Control Plane</td><td>Zentraler Server: API, Scheduler, Katalog</td></tr>
-  <tr><td>Agent</td><td>Go-Binary auf Zielsystem — führt Backup-Engines aus</td></tr>
-  <tr><td>Catalog</td><td>PostgreSQL-DB mit allen Backup-Entitäten</td></tr>
-  <tr><td>Policy</td><td>Konfiguration: Engine, Schedule, Retention</td></tr>
+  <tr><td>Control Plane</td><td>Zentraler Server: API, Scheduler, Katalog, Auth</td></tr>
+  <tr><td>Agent</td><td>Go-Binary auf Zielsystem</td></tr>
+  <tr><td>Enrollment Token</td><td>Einmal-Token (30 Min TTL) zum Registrieren</td></tr>
+  <tr><td>Agent Token</td><td>Langlebiger Bearer-Token</td></tr>
   <tr><td>Dead-Man's Switch</td><td>Alert wenn erwarteter Job ausbleibt</td></tr>
   <tr><td>Snapshot</td><td>Ergebnis eines erfolgreichen Backup-Jobs</td></tr>
   </table>

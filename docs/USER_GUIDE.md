@@ -1,269 +1,229 @@
 # User Guide — OpensourceBackup
 
 > Anleitung für den Betrieb und die Nutzung des OpensourceBackup Control Plane.
-> Stand: B1–B7 — REST API verfügbar, Auth kommt in B9.
+> Stand: B1–B9.7 — REST API + Backup-Agent verfügbar.
 
 ---
 
 ## Was ist OpensourceBackup?
 
-OpensourceBackup ist eine **Backup Control Plane** — eine zentrale Plattform, die
-Backup-Jobs auf vielen Systemen gleichzeitig verwaltet, überwacht und koordiniert.
+OpensourceBackup sichert Dateien, Ordner und Datenbanken auf deinen Servern und Clients.
+Es besteht aus zwei Teilen:
 
 ```
-Deine Systeme → Backup-Agent → Control Plane → Storage
-                                     ↑
-                               Du steuerst hier
+Control Plane (läuft zentral)
+  → verwaltet Systeme, Policies, Jobs, Snapshots
+  → plant Backups (Cron-Scheduler)
+  → überwacht ob Backups wirklich laufen (Dead-Man's-Switch)
+
+Agent (läuft auf jedem Zielsystem)
+  → holt Jobs von der Control Plane
+  → führt restic backup aus
+  → meldet Ergebnis zurück
 ```
 
-**Was du damit tust:**
-- Systeme registrieren (Server, VMs, Datenbanken)
-- Backup-Repositories definieren (S3, MinIO, ZFS)
-- Policies anlegen (was wird wann wie gesichert)
-- Jobs überwachen
-- Snapshots verwalten
+**Was du sichern kannst:**
+- Dateien & Ordner: `/home`, `/etc`, `/var/www`, `C:\Users\` → via Restic
+- PostgreSQL-Datenbanken → via pgBackRest
+- Komplette Systeme → via Restic
+- Kubernetes-Cluster → via Velero
 
 ---
 
 ## Starten
 
-### Lokal (Entwicklung)
+### Control Plane
 
 ```bash
-# Voraussetzungen: Docker, Go 1.22+
 git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
 
 make dev-up        # PostgreSQL + Redis starten
-make migrate-up    # Datenbanktabellen anlegen
-make run           # Control Plane starten → http://localhost:8080
-```
+make migrate-up    # Datenbank einrichten
+make run           # → http://localhost:8080
 
-### Gesundheitsprüfung
-
-```bash
 curl http://localhost:8080/health
 # → {"status":"ok"}
+```
+
+### Agent auf einem Zielsystem einrichten
+
+```bash
+# Schritt 1: System in der Control Plane anlegen
+curl -X POST http://localhost:8080/v1/systems \
+  -H "Content-Type: application/json" \
+  -d '{"Hostname": "mein-server", "RiskClass": "standard"}'
+# → {"ID": "uuid-des-systems", ...}
+
+# Schritt 2: Enrollment-Token erzeugen (gilt 30 Minuten)
+curl -X POST http://localhost:8080/v1/systems/{uuid-des-systems}/enrollment-token
+# → {"token": "Xk3mNp...", "expires_at": "..."}
+
+# Schritt 3: Agent starten — enrollt sich automatisch
+CONTROL_PLANE_URL=http://localhost:8080 \
+ENROLLMENT_TOKEN=Xk3mNp... \
+RESTIC_PASSWORD=geheimes-passwort \
+RESTIC_REPO=s3:mein-bucket/backups/mein-server \
+./agent
+
+# → Agent speichert Token in data/agent-token
+# → Agent pollt alle 30s nach Jobs
+```
+
+**Nach dem ersten Enrollment** genügt:
+```bash
+CONTROL_PLANE_URL=http://localhost:8080 \
+RESTIC_PASSWORD=geheimes-passwort \
+RESTIC_REPO=s3:mein-bucket/backups \
+./agent
+# → liest Token aus data/agent-token
 ```
 
 ---
 
 ## API-Referenz
 
-Base-URL: `http://localhost:8080` (Entwicklung)
-
-Alle Anfragen und Antworten sind JSON. Alle IDs sind UUIDs.
+Base-URL: `http://localhost:8080`
 
 ---
 
-### Systeme (`/v1/systems`)
+### Systeme `/v1/systems`
 
-Ein System ist ein zu sicherndes Gerät: Server, VM, Datenbank, Endgerät.
-
-#### System anlegen
+Ein System = ein zu sicherndes Gerät.
 
 ```bash
+# Anlegen
 curl -X POST http://localhost:8080/v1/systems \
   -H "Content-Type: application/json" \
-  -d '{
-    "Hostname": "web-server-01.example.com",
-    "OS": "Ubuntu 22.04",
-    "RiskClass": "critical",
-    "Tags": {"env": "prod", "team": "backend"}
-  }'
-```
+  -d '{"Hostname":"web-01","OS":"Ubuntu 22.04","RiskClass":"critical","Tags":{"env":"prod"}}'
 
-**Felder:**
-
-| Feld | Pflicht | Beschreibung |
-|---|---|---|
-| `Hostname` | ✅ | Eindeutiger Hostname |
-| `OS` | — | Betriebssystem |
-| `AgentVersion` | — | Version des installierten Agents |
-| `RiskClass` | — | `standard` (Default) oder `critical` |
-| `Tags` | — | Freie Key-Value-Metadaten (JSON) |
-
-#### Alle Systeme abrufen
-
-```bash
+# Alle abrufen
 curl http://localhost:8080/v1/systems
-```
 
-#### System abrufen
-
-```bash
+# Einzeln abrufen / aktualisieren / löschen
 curl http://localhost:8080/v1/systems/{id}
-```
-
-#### System aktualisieren
-
-```bash
-curl -X PUT http://localhost:8080/v1/systems/{id} \
-  -H "Content-Type: application/json" \
-  -d '{"Hostname": "web-server-01.example.com", "RiskClass": "standard"}'
-```
-
-#### System löschen
-
-```bash
+curl -X PUT http://localhost:8080/v1/systems/{id} -d '...'
 curl -X DELETE http://localhost:8080/v1/systems/{id}
-# → HTTP 204 No Content
 ```
 
----
+### Repositories `/v1/repositories`
 
-### Repositories (`/v1/repositories`)
-
-Ein Repository ist ein Backup-Speicherziel (S3-Bucket, MinIO, ZFS-Dataset).
-
-#### Repository anlegen
+Ein Repository = Backup-Speicherziel (S3, MinIO, lokales Laufwerk).
 
 ```bash
 curl -X POST http://localhost:8080/v1/repositories \
   -H "Content-Type: application/json" \
   -d '{
     "Type": "restic",
-    "Location": "s3:mein-bucket/backups/web-server-01",
+    "Location": "s3:mein-bucket/backups/web-01",
     "EncryptionMode": "aes256",
     "ObjectLockEnabled": true
   }'
 ```
 
-**Felder:**
-
 | Feld | Pflicht | Beschreibung |
 |---|---|---|
-| `Type` | ✅ | Engine: `restic`, `borg`, `pgbackrest`, `velero` |
-| `Location` | ✅ | Pfad oder URL zum Storage |
-| `EncryptionMode` | — | Verschlüsselungsmodus |
-| `ObjectLockEnabled` | — | WORM-Schutz (Ransomware-Schutz) |
+| `Type` | ✅ | `restic`, `borg`, `pgbackrest`, `velero` |
+| `Location` | ✅ | Pfad oder URL |
+| `ObjectLockEnabled` | — | WORM-Schutz gegen Ransomware |
 
----
+### Policies `/v1/policies`
 
-### Policies (`/v1/policies`)
-
-Eine Policy definiert: was wird gesichert, wann, mit welcher Engine, wie lange aufbewahrt.
-
-#### Policy anlegen
+Eine Policy = was wird wann wie gesichert, und wohin.
 
 ```bash
 curl -X POST http://localhost:8080/v1/policies \
   -H "Content-Type: application/json" \
   -d '{
-    "Name": "nightly-full-backup",
+    "Name": "nightly-full",
     "Engine": "restic",
-    "Includes": ["/home", "/etc", "/var/www"],
-    "Excludes": ["/home/*/.cache", "/var/www/tmp"],
+    "RepositoryID": "uuid-des-repositories",
+    "Includes": ["/home", "/etc"],
+    "Excludes": ["/home/*/.cache"],
     "Schedule": "0 2 * * *",
     "Retention": {"daily": 7, "weekly": 4, "monthly": 12}
   }'
 ```
 
-**Felder:**
-
-| Feld | Pflicht | Beschreibung |
-|---|---|---|
-| `Name` | ✅ | Eindeutiger Name |
-| `Engine` | ✅ | `restic`, `borg`, `pgbackrest`, `velero` |
-| `Includes` | — | Zu sichernde Pfade |
-| `Excludes` | — | Ausgeschlossene Pfade |
-| `Schedule` | — | Cron-Ausdruck (`0 2 * * *` = täglich 02:00 Uhr) |
-| `Retention` | — | Aufbewahrungsregeln als JSON |
-| `PreHooks` | — | Kommandos vor dem Backup |
-| `PostHooks` | — | Kommandos nach dem Backup |
+**Wichtig:** `RepositoryID` muss gesetzt sein, sonst schlägt der Backup-Job fehl.
 
 **Cron-Beispiele:**
 
 | Schedule | Bedeutung |
 |---|---|
-| `0 2 * * *` | Täglich um 02:00 Uhr |
-| `0 2 * * 0` | Wöchentlich, Sonntags 02:00 Uhr |
+| `0 2 * * *` | Täglich 02:00 Uhr |
+| `0 2 * * 0` | Wöchentlich, Sonntags |
 | `0 */6 * * *` | Alle 6 Stunden |
-| `@daily` | Einmal täglich |
+
+### Enrollment-Token `/v1/systems/{id}/enrollment-token`
+
+```bash
+# Einmaligen Token für einen Agent erzeugen (gilt 30 Minuten)
+curl -X POST http://localhost:8080/v1/systems/{id}/enrollment-token
+# → {"token": "...", "system_id": "...", "expires_at": "..."}
+```
 
 ---
 
-### Jobs (`/v1/jobs`)
+### Agent-Routen `/v1/agent/*`
 
-Ein Job ist eine ausgeführte oder geplante Backup-Instanz.
-
-#### Job manuell anlegen (pending)
+Diese Routen sind **nur für Agents** — immer mit Bearer-Token:
 
 ```bash
-curl -X POST http://localhost:8080/v1/jobs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "SystemID": "uuid-des-systems",
-    "PolicyID": "uuid-der-policy",
-    "Status": "pending"
-  }'
+Authorization: Bearer <agent-token>
+```
+
+| Route | Beschreibung |
+|---|---|
+| `POST /v1/agent/enroll` | Enrollment-Token → Agent-Token tauschen |
+| `GET /v1/agent/jobs` | Pending Jobs für dieses System |
+| `PUT /v1/agent/jobs/{id}/start` | Job als "running" markieren |
+| `PUT /v1/agent/jobs/{id}/complete` | Backup erfolgreich, Snapshot registrieren |
+| `PUT /v1/agent/jobs/{id}/fail` | Backup fehlgeschlagen |
+
+Ein Agent sieht **nur** seine eigenen Jobs — nie Jobs anderer Systeme.
+
+---
+
+### Jobs `/v1/jobs`
+
+```bash
+# Alle Jobs
+curl http://localhost:8080/v1/jobs
+
+# Pending Jobs für ein System (wie der Agent es nutzt)
+curl "http://localhost:8080/v1/jobs?system_id={id}&status=pending"
 ```
 
 **Job-Status:**
 
 | Status | Bedeutung |
 |---|---|
-| `pending` | Warte auf Agent |
+| `pending` | Wartet auf Agent |
 | `running` | Agent führt Backup aus |
-| `success` | Backup erfolgreich |
-| `failed` | Backup fehlgeschlagen |
-| `warning` | Backup mit Warnungen |
+| `success` | Erfolgreich |
+| `failed` | Fehlgeschlagen |
 
-#### Alle Jobs abrufen
-
-```bash
-curl http://localhost:8080/v1/jobs
-```
-
-#### Job-Status aktualisieren
+### Snapshots `/v1/snapshots`
 
 ```bash
-curl -X PUT http://localhost:8080/v1/jobs/{id} \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Status": "success",
-    "BytesScanned": 10737418240,
-    "BytesUploaded": 1073741824
-  }'
+curl http://localhost:8080/v1/snapshots
+curl http://localhost:8080/v1/snapshots/{id}
 ```
 
 ---
 
-### Snapshots (`/v1/snapshots`)
+## Scheduler & Monitoring
 
-Ein Snapshot ist das Ergebnis eines erfolgreichen Backup-Jobs — die Referenz auf die
-tatsächlich gesicherten Daten in der Backup-Engine.
+**Automatische Job-Erstellung:** Der Scheduler liest beim Start alle Policies mit Cron-Schedule
+und erstellt automatisch `pending`-Jobs zur richtigen Zeit.
 
-#### Snapshot anlegen
-
-```bash
-curl -X POST http://localhost:8080/v1/snapshots \
-  -H "Content-Type: application/json" \
-  -d '{
-    "JobID": "uuid-des-jobs",
-    "RepositoryID": "uuid-des-repositories",
-    "EngineSnapshotID": "abc123def456",
-    "Hostname": "web-server-01",
-    "Paths": ["/home", "/etc"],
-    "ChecksumStatus": "verified"
-  }'
-```
-
----
-
-## Scheduler & Dead-Man's-Switch
-
-Der Scheduler lädt beim Start alle Policies mit einem Cron-Schedule und plant
-automatisch Backup-Jobs.
-
-**Dead-Man's-Switch:** Alle 5 Minuten prüft der Scheduler ob alle Policies
-fristgerecht ausgeführt wurden. Wenn der letzte Job älter als `Intervall × 1.5` ist,
-wird eine Warnung geloggt:
+**Dead-Man's-Switch:** Alle 5 Minuten prüft der Scheduler ob alle Jobs termingerecht gelaufen sind.
+Wenn der letzte Job älter als `Intervall × 1.5` ist:
 
 ```json
 {"level":"WARN","msg":"dead-man: overdue job detected",
- "policy_id":"...","policy_name":"nightly-full-backup",
- "last_job_at":"2024-01-01T02:00:00Z","overdue_since":"..."}
+ "policy_name":"nightly-full","last_job_at":"2026-05-31T02:00:00Z"}
 ```
 
 ---
@@ -272,51 +232,48 @@ wird eine Warnung geloggt:
 
 | Code | Bedeutung |
 |---|---|
-| `200 OK` | Erfolgreich |
-| `201 Created` | Ressource angelegt |
-| `204 No Content` | Gelöscht |
-| `400 Bad Request` | Ungültige Eingabe (Fehlermeldung im Body) |
-| `404 Not Found` | Ressource nicht gefunden |
-| `413 Request Entity Too Large` | Body > 1 MB |
-| `503 Service Unavailable` | Timeout oder DB nicht erreichbar |
-
-Fehler-Body:
-```json
-{"error": "hostname is required"}
-```
+| `200` | Erfolgreich |
+| `201` | Ressource angelegt |
+| `204` | Gelöscht |
+| `400` | Ungültige Eingabe |
+| `401` | Kein oder ungültiger Token |
+| `404` | Nicht gefunden (auch: falsches System bei Agent-Routen) |
+| `413` | Request Body > 1 MB |
+| `503` | DB nicht erreichbar oder Timeout |
 
 ---
 
 ## Häufige Fragen
 
-**Warum muss ich mich nicht anmelden?**
-Auth kommt in B9. In der aktuellen Version (B1–B7) ist die API noch offen.
-**Nicht für Produktionseinsatz verwenden.**
+**Agent meldet "re-enrollment required" — was tun?**
+Der Agent-Token wurde revoked oder ist ungültig. Neuen Enrollment-Token erstellen und
+Agent neu starten mit `ENROLLMENT_TOKEN=...`.
 
-**Wie überprüfe ich ob die DB verbunden ist?**
+**Backup schlägt fehl mit "policy has no repository configured"?**
+Policy hat keine `RepositoryID`. Policy aktualisieren:
+```bash
+curl -X PUT http://localhost:8080/v1/policies/{id} \
+  -d '{"...", "RepositoryID": "uuid-des-repositories"}'
+```
+
+**DB-Verbindung prüfen:**
 ```bash
 curl http://localhost:8080/health
-# → {"status":"ok"}          DB erreichbar
-# → HTTP 503                 DB nicht erreichbar
+# {"status":"ok"} → OK
+# HTTP 503        → DB nicht erreichbar
 ```
 
-**Wie lese ich die Logs?**
-Die Control Plane loggt strukturiertes JSON:
+**Alles zurücksetzen:**
 ```bash
-make run 2>&1 | jq .
-```
-
-**Wie setze ich alles zurück?**
-```bash
-make migrate-down  # Alle Tabellen löschen
-make migrate-up    # Neu anlegen
+make migrate-down && make migrate-up
 ```
 
 ---
 
-## Datenschutz & Sicherheitshinweise
+## Sicherheitshinweise
 
-- Keine Produktionsdaten in der aktuellen Version speichern (keine Auth)
-- `DATABASE_URL` enthält Credentials — niemals in Logs ausgeben
-- `.env.local` niemals committen — ist in `.gitignore`
-- Backup-Repository-Credentials (S3-Keys etc.) kommen in HashiCorp Vault (B9+)
+- Agent-Token liegt in `data/agent-token` mit Rechten `0600` — nur Owner lesbar
+- `RESTIC_PASSWORD` niemals in Logs ausgeben
+- `DATABASE_URL` enthält Credentials — niemals committen
+- Enrollment-Token gilt nur 30 Minuten und kann nur einmal verwendet werden
+- Control Plane setzt automatisch Security Headers auf jede Response

@@ -40,158 +40,123 @@ tr:nth-child(even) td{background:rgba(20,24,36,.5)}
   <a href="#struktur">Projektstruktur</a>
   <a href="#make">Make-Targets</a>
   <a href="#envvars">Umgebungsvariablen</a>
-  <a href="#branching">Branching & Commits</a>
+  <a href="#enrollment">Agent-Enrollment</a>
   <a href="#tests">Tests</a>
   <a href="#dod">Definition of Done</a>
   <a href="#coding">Coding-Regeln</a>
-  <a href="#ci">CI/CD</a>
 </nav>
 <main class="content">
-  <h1>Developer Guide<br><span class="sub">OpensourceBackup — Stand B1–B7</span></h1>
+  <h1>Developer Guide<br><span class="sub">OpensourceBackup — Stand B1–B9.7</span></h1>
 
   <h2 id="voraussetzungen">Voraussetzungen</h2>
-  <pre><code>go 1.22+
-docker 24+ / docker compose 2.20+
-git 2.40+
+  <pre><code>go 1.22+  ·  docker 24+  ·  git 2.40+  ·  restic (auf Zielsystemen)
 golangci-lint v2  →  make lint-install
-golang-migrate    →  go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+golang-migrate    →  go install -tags postgres .../migrate@latest
 goimports         →  go install golang.org/x/tools/cmd/goimports@latest</code></pre>
 
   <h2 id="setup">Setup</h2>
   <pre><code>git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
-
-make deps          # go mod download
-make dev-up        # PostgreSQL + Redis starten (Docker)
-make migrate-up    # Schema anlegen
-make run           # Control Plane → http://localhost:8080
-
-# Gesundheitsprüfung
-curl http://localhost:8080/health
-# → {"status":"ok"}</code></pre>
+make deps && make dev-up && make migrate-up && make run
+# → http://localhost:8080/health → {"status":"ok"}</code></pre>
 
   <h2 id="struktur">Projektstruktur</h2>
-  <pre><code>opensourcebackup/
-├── cmd/control-plane/main.go   # Einstiegspunkt: Server + Scheduler + Middleware
-├── internal/
-│   ├── api/                    # HTTP REST API
-│   │   ├── handler.go          # Handler-Struct, DI, decode(), ErrBodyTooLarge
-│   │   ├── middleware.go       # Recovery · SecurityHeaders · BodyLimit · Logging · Timeout
-│   │   ├── routes.go           # URL-Routing /health + /v1/...
-│   │   ├── systems.go          # CRUD /v1/systems
-│   │   ├── repositories.go     # CRUD /v1/repositories
-│   │   ├── policies.go         # CRUD /v1/policies
-│   │   ├── jobs.go             # CRUD /v1/jobs
-│   │   └── snapshots.go        # CRD  /v1/snapshots
-│   ├── catalog/                # Datenbankschicht
-│   │   ├── db.go               # pgxpool, Open/Ping/Close
-│   │   ├── models.go           # System · Repository · Policy · Job · Snapshot
-│   │   ├── errors.go           # ErrNotFound · ErrConflict
-│   │   └── *.go                # Store-Interfaces + pgx-Implementierungen
-│   └── scheduler/
-│       └── scheduler.go        # Cron-Dispatcher + Dead-Man's-Switch
-├── migrations/                 # 000001–000005 up/down SQL
-├── deployments/docker-compose/ # dev.yml: PostgreSQL 16 + Redis 7
-├── .golangci.hard.yml          # Lint Schicht 1 — blockiert CI
-├── .golangci.warn.yml          # Lint Schicht 2 — informativ
-├── .github/workflows/ci.yml    # CI: Test + Lint
-└── Makefile</code></pre>
+  <pre><code>cmd/
+  control-plane/   HTTP-Server + Scheduler + Auth
+  agent/           Enrollment-Flow + Poll-Loop
+
+internal/
+  api/
+    middleware.go      Recovery · SecurityHeaders · BodyLimit · Logging · Timeout
+    agent_auth.go      AgentAuth-Middleware, SystemIDFromContext
+    enrollment.go      POST /enrollment-token, POST /agent/enroll
+    agent_jobs.go      GET/start/complete/fail /v1/agent/jobs/*
+    handler.go + routes.go + systems.go + ...
+  auth/
+    token.go           GenerateToken (256-bit), HashToken (SHA-256)
+    enrollment_store.go OTP: Create, Consume, Revoke
+    agent_token_store.go Bearer: Create, ValidateAndTouch, Revoke
+  agent/
+    agent.go           Poll-Loop, 401→Abbruch, transient→weiter
+    tokenfile.go       SaveToken(0600), LoadToken
+    client/client.go   HTTP-Client /v1/agent/* + Enroll
+    restic/runner.go   init, backup --json, parse
+  catalog/           5 Store-Interfaces + pgx
+  scheduler/         Cron + Dead-Man's-Switch
+
+migrations/        000001–000008</code></pre>
 
   <h2 id="make">Make-Targets</h2>
   <table>
     <tr><th>Target</th><th>Beschreibung</th></tr>
     <tr><td><code>make deps</code></td><td>go mod download</td></tr>
-    <tr><td><code>make test</code></td><td>Unit-Tests (kein Docker nötig)</td></tr>
-    <tr><td><code>make test-integration</code></td><td>Integration-Tests gegen PostgreSQL</td></tr>
-    <tr><td><code>make lint</code></td><td>golangci-lint Schicht 1 — blockiert bei Verletzung</td></tr>
-    <tr><td><code>make lint-warn</code></td><td>golangci-lint Schicht 2 — zeigt Baustellen</td></tr>
-    <tr><td><code>make fmt</code></td><td>gofmt + goimports</td></tr>
-    <tr><td><code>make check</code></td><td>fmt + lint + test in einem</td></tr>
+    <tr><td><code>make test</code></td><td>Unit-Tests</td></tr>
+    <tr><td><code>make test-integration</code></td><td>Integration-Tests (DATABASE_URL)</td></tr>
+    <tr><td><code>make lint</code></td><td>Schicht 1 — blockiert bei Verletzung</td></tr>
+    <tr><td><code>make lint-warn</code></td><td>Schicht 2 — informativ</td></tr>
+    <tr><td><code>make check</code></td><td>fmt + lint + test</td></tr>
     <tr><td><code>make run</code></td><td>Control Plane starten</td></tr>
-    <tr><td><code>make dev-up</code></td><td>Docker Compose starten</td></tr>
-    <tr><td><code>make dev-down</code></td><td>Docker Compose stoppen</td></tr>
-    <tr><td><code>make migrate-up</code></td><td>Alle Migrationen ausführen</td></tr>
-    <tr><td><code>make migrate-down</code></td><td>Alle Migrationen rückgängig</td></tr>
-    <tr><td><code>make lint-install</code></td><td>golangci-lint v2 installieren</td></tr>
+    <tr><td><code>make run-agent</code></td><td>Agent starten</td></tr>
+    <tr><td><code>make dev-up / dev-down</code></td><td>Docker Compose</td></tr>
+    <tr><td><code>make migrate-up / down</code></td><td>Schema 000001–000008</td></tr>
   </table>
 
   <h2 id="envvars">Umgebungsvariablen</h2>
+  <h3>Control Plane</h3>
+  <pre><code>DATABASE_URL=postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
+LISTEN_ADDR=:8080</code></pre>
+  <h3>Agent (Token-Priorität)</h3>
+  <pre><code>CONTROL_PLANE_URL=http://localhost:8080
+RESTIC_PASSWORD=geheimes-passwort
+RESTIC_REPO=s3:mein-bucket/backups/system-name
+
+# Eine Option wählen:
+AGENT_TOKEN=&lt;token&gt;              # 1. direkter Token
+AGENT_TOKEN_FILE=data/agent-token # 2. Token aus Datei (Default)
+ENROLLMENT_TOKEN=&lt;token&gt;         # 3. Enrollen und Token speichern</code></pre>
+
+  <h2 id="enrollment">Agent-Enrollment</h2>
+  <pre><code># Admin: Enrollment-Token erzeugen
+curl -X POST http://localhost:8080/v1/systems/{id}/enrollment-token
+# → {"token": "Xk3mNp...", "expires_at": "...+30min"}
+
+# Agent: mit Enrollment-Token starten (enrollt sich automatisch)
+CONTROL_PLANE_URL=http://... ENROLLMENT_TOKEN=Xk3mNp... \
+RESTIC_PASSWORD=secret RESTIC_REPO=s3:... make run-agent
+# → Token in data/agent-token (0600) gespeichert</code></pre>
+
+  <h2 id="tests">Tests (~70 gesamt)</h2>
   <table>
-    <tr><th>Variable</th><th>Pflicht</th><th>Default</th><th>Beschreibung</th></tr>
-    <tr><td><code>DATABASE_URL</code></td><td>✅</td><td>—</td><td>PostgreSQL DSN</td></tr>
-    <tr><td><code>LISTEN_ADDR</code></td><td>—</td><td><code>:8080</code></td><td>HTTP-Bind-Adresse</td></tr>
-    <tr><td><code>REDIS_URL</code></td><td>—</td><td>—</td><td>Redis-Verbindung</td></tr>
+    <tr><th>Paket</th><th>Typ</th><th>Inhalt</th></tr>
+    <tr><td><code>internal/auth</code></td><td>Unit + Integration</td><td>Token-Hashing, Enrollment, Agent-Token (12)</td></tr>
+    <tr><td><code>internal/api</code></td><td>Unit</td><td>Handler, Middleware, AgentAuth (16+)</td></tr>
+    <tr><td><code>internal/agent</code></td><td>Unit</td><td>Poll, 401, transient errors (4)</td></tr>
+    <tr><td><code>internal/catalog</code></td><td>Integration</td><td>Alle 5 Stores + B12 (50+)</td></tr>
   </table>
-  <p>Vorlage: <code>.env.example</code> — <strong>niemals</strong> <code>.env.local</code> committen.</p>
-
-  <h2 id="branching">Branching &amp; Commits</h2>
-  <p>GitHub Flow — ein <code>main</code>-Branch, kurzlebige Feature-Branches:</p>
-  <pre><code>feature/OB-123-kurzbeschreibung
-fix/OB-456-beschreibung
-docs/OB-789-beschreibung</code></pre>
-  <p>Conventional Commits:</p>
-  <pre><code>feat(catalog): add SystemStore with CRUD operations
-fix(api): return 404 on missing system instead of 500
-docs(adr): add ADR-004 for scheduler design
-chore(lint): promote revive to hard layer</code></pre>
-
-  <h2 id="tests">Tests schreiben</h2>
-  <pre><code>// Unit-Test (kein Build-Tag nötig)
-func TestCreateSystem_Returns201_WithID(t *testing.T) { ... }
-
-// Integration-Test
-//go:build integration
-func TestSystemStore_Create_AssignsIDAndCreatedAt(t *testing.T) { ... }</code></pre>
-  <pre><code># Nur Unit-Tests
-go test ./...
-
-# Integration-Tests
-DATABASE_URL=... go test -tags=integration ./internal/catalog/...</code></pre>
-  <p>Aktuell: <strong>48 Tests</strong> — alle grün.</p>
 
   <h2 id="dod">Definition of Done</h2>
   <ul class="checklist">
-    <li><code>go build ./...</code> — kein Fehler</li>
+    <li><code>go build ./...</code> grün</li>
     <li><code>make lint</code> — 0 Issues</li>
-    <li><code>make test</code> — alle grün</li>
-    <li>Integration-Tests für neue DB-Stores</li>
-    <li><code>CHANGELOG.md</code> aktualisiert (bei feat/fix)</li>
-    <li>Beide READMEs (EN + DE) aktualisiert wenn nötig</li>
-    <li>ADR erstellt wenn Architekturentscheidung getroffen wurde</li>
-    <li>Keine Credentials oder private Daten im Code</li>
+    <li><code>make test</code> + <code>make test-integration</code> — alle grün</li>
+    <li>Tokens werden nie geloggt (Code-Review-Pflicht)</li>
+    <li><code>CHANGELOG.md</code> aktualisiert</li>
+    <li>Beide READMEs synchron</li>
   </ul>
 
   <h2 id="coding">Coding-Regeln</h2>
   <table>
-    <tr><th>Prinzip</th><th>Anwendung im Projekt</th></tr>
-    <tr><td>DIP</td><td>Handler hängen von Store-Interfaces ab, nicht von pgx-Implementierungen</td></tr>
-    <tr><td>SRP</td><td>Eine Datei — eine Verantwortlichkeit</td></tr>
-    <tr><td>IOSP</td><td><code>main.go</code> orchestriert, <code>catalog/</code> führt aus</td></tr>
-    <tr><td>KISS</td><td>stdlib <code>net/http</code> statt Router-Framework</td></tr>
-    <tr><td>YAGNI</td><td>Keine vorauseilenden Abstraktionen</td></tr>
-    <tr><td>DRY</td><td><code>handleDecodeError()</code> statt wiederholter writeError-Aufrufe</td></tr>
+    <tr><th>Prinzip</th><th>Beispiel</th></tr>
+    <tr><td>DIP</td><td><code>ControlPlaneClient</code> Interface — kein Import des konkreten Clients im Agent</td></tr>
+    <tr><td>SRP</td><td><code>auth/token.go</code> — nur Token-Hashing</td></tr>
+    <tr><td>Security</td><td><code>// Bearer token — never log this</code> im Client-Code</td></tr>
+    <tr><td>KISS</td><td>stdlib net/http, Go 1.22 Pattern-Routing</td></tr>
   </table>
-  <p>Vollständige Regeln: <a href="developer-guide/CLEAN_CODE.md" style="color:var(--accent-cyan)">CLEAN_CODE.md</a></p>
-
-  <h2 id="ci">CI/CD</h2>
-  <pre><code>.github/workflows/ci.yml — läuft bei jedem Push/PR auf main:
-
-1. test      — Unit + Integration gegen PostgreSQL
-2. lint      — golangci-lint hard  (blockiert Merge)
-3. lint-warn — golangci-lint warn  (non-blocking, informativ)</code></pre>
 </main>
 <script>
-const links = document.querySelectorAll('.sidebar a');
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(e => {
-    if(e.isIntersecting){
-      links.forEach(l => l.classList.remove('active'));
-      const a = document.querySelector('.sidebar a[href="#'+e.target.id+'"]');
-      if(a) a.classList.add('active');
-    }
-  });
-},{threshold:.3});
-document.querySelectorAll('h2[id]').forEach(h => observer.observe(h));
+const links=document.querySelectorAll('.sidebar a');
+const obs=new IntersectionObserver(e=>{e.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.remove('active'));const a=document.querySelector('.sidebar a[href="#'+e.target.id+'"]');if(a)a.classList.add('active');}})},{threshold:.3});
+document.querySelectorAll('h2[id]').forEach(h=>obs.observe(h));
 </script>
 </body>
 </html>
