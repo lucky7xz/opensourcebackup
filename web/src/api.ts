@@ -47,6 +47,7 @@ export const api = {
   health:        () => get<{status:string}>('/health'),
   systems:       () => get<System[]>('/v1/systems'),
   deleteSystem:  (id: string) => del(`/v1/systems/${id}`),
+  deleteJob:     (id: string) => del(`/v1/jobs/${id}`),
   repositories: () => get<BackupRepository[]>('/v1/repositories'),
   policies:     () => get<BackupPolicy[]>('/v1/policies'),
   jobs:         () => get<BackupJob[]>('/v1/jobs'),

@@ -4,6 +4,7 @@ import { Card, SectionHeader } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
 import { Modal } from '../components/Modal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const FILTERS = ['all', 'success', 'running', 'pending', 'failed']
 
@@ -13,11 +14,12 @@ export function Jobs() {
   const [policies, setPolicies] = useState<BackupPolicy[]>([])
   const [filter,   setFilter]   = useState('all')
   const [loading,  setLoading]  = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [selSystem, setSelSystem] = useState('')
-  const [selPolicy, setSelPolicy] = useState('')
-  const [creating,  setCreating]  = useState(false)
-  const [error,     setError]     = useState<string|null>(null)
+  const [showModal,  setShowModal]  = useState(false)
+  const [deleteJob,  setDeleteJob]  = useState<BackupJob|null>(null)
+  const [selSystem,  setSelSystem]  = useState('')
+  const [selPolicy,  setSelPolicy]  = useState('')
+  const [creating,   setCreating]   = useState(false)
+  const [error,      setError]      = useState<string|null>(null)
 
   const load = () => Promise.all([api.jobs(), api.systems(), api.policies()])
     .then(([j,s,p]) => { setJobs(j); setSystems(s); setPolicies(p) })
@@ -75,12 +77,30 @@ export function Jobs() {
               { header:'Error',    render:j => j.ErrorSummary
                   ? <span style={s.err}>{j.ErrorSummary}</span>
                   : <span style={s.dim}>—</span> },
+              { header:'',        render:j => (j.Status==='pending'||j.Status==='failed')
+                  ? <button onClick={() => setDeleteJob(j)} style={s.delBtn}>🗑</button>
+                  : null, width:'40px' },
             ]}
             rows={filtered} keyFn={j => j.ID}
             empty={`No ${filter==='all' ? '' : filter+' '}jobs found`}
           />
         )}
       </Card>
+
+      {deleteJob && (
+        <ConfirmDialog
+          title="Delete Job?"
+          message={`Delete this ${deleteJob.Status} job for ${hostname(deleteJob.SystemID)}? The agent will no longer pick it up.`}
+          confirmLabel="Delete Job"
+          danger
+          onConfirm={async () => {
+            await api.deleteJob(deleteJob.ID)
+            setDeleteJob(null)
+            await load()
+          }}
+          onCancel={() => setDeleteJob(null)}
+        />
+      )}
 
       {showModal && (
         <Modal title="Run Backup Job" onClose={() => { setShowModal(false); setError(null) }}>
@@ -135,4 +155,5 @@ const s: Record<string, React.CSSProperties> = {
   actions:   { display:'flex', gap:8, justifyContent:'flex-end', marginTop:20, paddingTop:16, borderTop:'1px solid var(--border)' },
   cancelBtn: { padding:'7px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
   submitBtn: { padding:'7px 20px', borderRadius:6, background:'var(--success)', color:'#000', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' },
+  delBtn:    { padding:'3px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
 }
