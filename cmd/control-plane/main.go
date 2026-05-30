@@ -46,6 +46,12 @@ func main() {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
+	httpHandler := api.Chain(mux,
+		api.Recovery(logger),
+		api.Logging(logger),
+		api.Timeout(30*time.Second),
+	)
+
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -53,9 +59,9 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      httpHandler,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 35 * time.Second,
 	}
 
 	go func() {
