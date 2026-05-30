@@ -28,6 +28,16 @@ export interface Snapshot {
   Hostname?: string; Paths?: string[]; ChecksumStatus: string; CreatedAt: string
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status}`)
+  return res.json()
+}
+
 export const api = {
   health:       () => get<{status:string}>('/health'),
   systems:      () => get<System[]>('/v1/systems'),
@@ -35,6 +45,10 @@ export const api = {
   policies:     () => get<BackupPolicy[]>('/v1/policies'),
   jobs:         () => get<BackupJob[]>('/v1/jobs'),
   snapshots:    () => get<Snapshot[]>('/v1/snapshots'),
+  createJob:    (systemID: string, policyID: string) =>
+    post<BackupJob>('/v1/jobs', { SystemID: systemID, PolicyID: policyID, Status: 'pending' }),
+  createEnrollmentToken: (systemID: string) =>
+    post<{token:string; expires_at:string}>(`/v1/systems/${systemID}/enrollment-token`, {}),
 }
 
 export function fmt(bytes?: number) {
