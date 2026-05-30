@@ -54,6 +54,10 @@ func (s *stubJobStore) List(_ context.Context) ([]catalog.BackupJob, error) { re
 func (s *stubJobStore) ListBySystemID(_ context.Context, _ uuid.UUID) ([]catalog.BackupJob, error) {
 	return nil, nil
 }
+
+func (s *stubJobStore) ListPendingBySystemID(_ context.Context, _ uuid.UUID) ([]catalog.BackupJob, error) {
+	return nil, nil
+}
 func (s *stubJobStore) LatestByPolicyID(_ context.Context, policyID uuid.UUID) (*catalog.BackupJob, error) {
 	for i := len(s.created) - 1; i >= 0; i-- {
 		if s.created[i].PolicyID == policyID {

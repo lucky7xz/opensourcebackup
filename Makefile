@@ -6,6 +6,7 @@
 DATABASE_URL     ?= postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
 MIGRATIONS_PATH  := migrations
 CONTROL_PLANE    := ./cmd/control-plane
+AGENT            := ./cmd/agent
 MIGRATE_BIN      := migrate
 
 # ── Dependencies ────────────────────────────────────────────────────────────
@@ -43,6 +44,9 @@ lint-install:
 # ── Run ─────────────────────────────────────────────────────────────────────
 run:
 	DATABASE_URL=$(DATABASE_URL) go run $(CONTROL_PLANE)
+
+run-agent:
+	go run $(AGENT)
 
 # ── Migrations ──────────────────────────────────────────────────────────────
 # Requires: go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest

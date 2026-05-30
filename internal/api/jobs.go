@@ -9,6 +9,28 @@ import (
 )
 
 func (h *Handler) listJobs(w http.ResponseWriter, r *http.Request) {
+	systemIDStr := r.URL.Query().Get("system_id")
+	status := r.URL.Query().Get("status")
+
+	if systemIDStr != "" && status == "pending" {
+		id, err := uuid.Parse(systemIDStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid system_id")
+			return
+		}
+		jobs, err := h.jobs.ListPendingBySystemID(r.Context(), id)
+		if err != nil {
+			h.log.Error("list pending jobs", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if jobs == nil {
+			jobs = []catalog.BackupJob{}
+		}
+		writeJSON(w, http.StatusOK, jobs)
+		return
+	}
+
 	jobs, err := h.jobs.List(r.Context())
 	if err != nil {
 		h.log.Error("list jobs", "error", err)

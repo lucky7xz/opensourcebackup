@@ -141,6 +141,16 @@ func (s *stubJobStore) List(_ context.Context) ([]catalog.BackupJob, error) {
 	return out, nil
 }
 
+func (s *stubJobStore) ListPendingBySystemID(_ context.Context, systemID uuid.UUID) ([]catalog.BackupJob, error) {
+	var out []catalog.BackupJob
+	for _, j := range s.jobs {
+		if j.SystemID == systemID && j.Status == "pending" {
+			out = append(out, *j)
+		}
+	}
+	return out, nil
+}
+
 func (s *stubJobStore) LatestByPolicyID(_ context.Context, _ uuid.UUID) (*catalog.BackupJob, error) {
 	return nil, catalog.ErrNotFound
 }
