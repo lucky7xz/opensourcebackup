@@ -48,6 +48,23 @@ run:
 run-agent:
 	go run $(AGENT)
 
+# ── Agent Release Builds ─────────────────────────────────────────────────────
+VERSION ?= v0.1.0
+
+build-agent-windows:
+	GOOS=windows GOARCH=amd64 go build -o dist/agent/$(VERSION)/opensourcebackup-agent-windows-amd64.exe $(AGENT)
+
+build-agent-linux:
+	GOOS=linux GOARCH=amd64 go build -o dist/agent/$(VERSION)/opensourcebackup-agent-linux-amd64 $(AGENT)
+
+build-agent-linux-arm64:
+	GOOS=linux GOARCH=arm64 go build -o dist/agent/$(VERSION)/opensourcebackup-agent-linux-arm64 $(AGENT)
+
+build-agent-darwin:
+	GOOS=darwin GOARCH=arm64 go build -o dist/agent/$(VERSION)/opensourcebackup-agent-darwin-arm64 $(AGENT)
+
+build-agent-all: build-agent-windows build-agent-linux build-agent-linux-arm64 build-agent-darwin
+
 # ── Migrations ──────────────────────────────────────────────────────────────
 # Requires: go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 migrate-up:

@@ -10,6 +10,10 @@ import (
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
 
+	// Agent binary downloads
+	mux.HandleFunc("GET /downloads/agent", h.listDownloads)
+	mux.HandleFunc("GET /downloads/agent/{version}/{platform}", h.downloadAgent)
+
 	// Enrollment (admin operation — protected by network/future admin auth)
 	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token", h.createEnrollmentToken)
 

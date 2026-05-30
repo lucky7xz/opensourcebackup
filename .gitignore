@@ -27,6 +27,7 @@ Thumbs.db
 
 # Build artifacts
 dist/
+bin/
 
 # Interne Sicherheitsdokumentation — nicht öffentlich
 docs/security/
