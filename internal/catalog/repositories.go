@@ -108,8 +108,8 @@ func (s *pgRepositoryStore) Delete(ctx context.Context, id uuid.UUID) error {
 
 func scanRepository(row rowScanner) (*BackupRepository, error) {
 	var (
-		r       BackupRepository
-		rawID   pgtype.UUID
+		r        BackupRepository
+		rawID    pgtype.UUID
 		rawRetID pgtype.UUID
 	)
 	if err := row.Scan(

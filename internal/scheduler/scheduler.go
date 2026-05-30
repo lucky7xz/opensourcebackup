@@ -6,8 +6,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 	"github.com/robfig/cron/v3"
+
+	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
 // Scheduler dispatches backup jobs according to policy cron schedules.
@@ -29,7 +30,7 @@ func New(policies catalog.PolicyStore, jobs catalog.JobStore, log *slog.Logger) 
 }
 
 // Start loads all scheduled policies, registers cron entries, and runs the
-// dead-man's switch checker until ctx is cancelled.
+// dead-man's switch checker until ctx is canceled.
 func (s *Scheduler) Start(ctx context.Context) error {
 	policies, err := s.policies.List(ctx)
 	if err != nil {

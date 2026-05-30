@@ -3,8 +3,9 @@ package api_test
 import (
 	"context"
 
-	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 	"github.com/google/uuid"
+
+	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
 // stubSystemStore is an in-memory SystemStore for unit tests.

@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 	"github.com/cerberus8484/opensourcebackup/internal/scheduler"
-	"github.com/google/uuid"
 )
 
 var testLog = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -79,7 +80,7 @@ func TestScheduler_Start_SkipsPoliciesWithoutSchedule(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Start returns when ctx is cancelled — no error expected
+	// Start returns when ctx is canceled — no error expected
 	if err := s.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

@@ -3,8 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 	"github.com/google/uuid"
+
+	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
 func (h *Handler) listSystems(w http.ResponseWriter, r *http.Request) {

@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/cerberus8484/opensourcebackup/internal/api"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
-	"github.com/google/uuid"
 )
 
 func newTestHandler() *api.Handler {

@@ -310,15 +310,99 @@ Folgende Fragen stellt jeder Reviewer:
 
 ---
 
+## Static Code Analysis — Lint-Strategie
+
+**Wert: Korrektheit, Kontinuierliche Verbesserung**
+
+Linting ist keine Option. Es ist das automatisierte Gedächtnis des Teams für alle
+Prinzipien, die oben stehen. Was nicht automatisch geprüft wird, wird irgendwann vergessen.
+
+### Zwei-Schichten-Modell
+
+Wir unterscheiden **harte Regeln** (blockieren den Build) und **weiche Regeln** (Warnungen,
+kein Block). Weiche Regeln werden schrittweise in harte umgewandelt — nie andersherum.
+
+```
+Schicht 1 — Hart (make lint)          → blockiert CI, kein Merge bei Fehler
+Schicht 2 — Weich (make lint-warn)    → zeigt Baustellen, blockiert nie
+```
+
+**Warum nicht alles sofort hart?**
+Weil ein Repo das von 0 auf 100 geht zuerst tausend Warnungen produziert, alle ignoriert
+und dann niemand mehr hinschaut. Lieber 10 Regeln die wirklich gelten als 100 die niemand ernst nimmt.
+
+---
+
+### Schicht 1 — Harte Regeln (blockieren)
+
+| Linter | Warum hart |
+|---|---|
+| `errcheck` | Verschluckte Fehler sind Bugs, keine Style-Frage |
+| `govet` | Compiler-nahe Korrektheitsprüfungen |
+| `staticcheck` | Tote Code-Pfade, falsche API-Nutzung |
+| `unused` | Toter Code erhöht die kognitive Last dauerhaft |
+| `gosimple` | Unnötige Komplexität verletzt KISS |
+| `gofmt` | Formatierung ist nicht verhandelbar |
+| `goimports` | Import-Ordnung ist Konvention |
+| `misspell` | Tippfehler in Bezeichnern und Kommentaren |
+| `bodyclose` | HTTP-Response-Bodies die nicht geschlossen werden leaken |
+| `noctx` | HTTP-Requests ohne Context sind nicht produktionsreif |
+
+---
+
+### Schicht 2 — Weiche Regeln (Warnungen, `--exit-zero`)
+
+Werden hart, sobald das Team sie konsistent einhält. Reihenfolge ist Priorität.
+
+| Linter | Wert | Wann hart? |
+|---|---|---|
+| `revive` | Allgemeine Go-Idiome und Naming | Q3 |
+| `gocritic` | Code-Qualität, Anti-Patterns | Q3 |
+| `cyclop` | Zyklomatische Komplexität > 10 | Q3 |
+| `funlen` | Funktionen > 60 Zeilen | Q4 |
+| `godot` | Kommentare mit Punkt abschließen | Q4 |
+| `exhaustive` | Nicht alle Enum-Fälle behandelt | Q4 |
+| `wrapcheck` | Externe Fehler ohne `%w` gewrappt | Q4 |
+| `gomnd` | Magische Zahlen (ohne Konstante) | Q4 |
+
+---
+
+### Workflow
+
+```bash
+# Vor jedem Commit — blockiert bei Verletzung
+make lint
+
+# Täglich oder im PR — zeigt Baustellen, blockiert nie
+make lint-warn
+```
+
+**Regel:** Ein neuer Linter kommt immer zuerst in `make lint-warn`. Erst nach einem Sprint
+ohne neue Verletzungen wandert er in `make lint`.
+
+---
+
+### Code-Review: Lint ist kein Ersatz für Review
+
+Lint prüft **Struktur**. Review prüft **Absicht**.
+
+```
+Lint sieht:  „Diese Funktion hat 80 Zeilen."
+Review fragt: „Warum hat diese Funktion 80 Zeilen — was macht sie falsch?"
+```
+
+---
+
 ## Unser Reifegrad-Ziel
 
 Das Team arbeitet aktiv auf den **Grünen Grad** hin:
 
 ```
-✅ Rot    — DRY, KISS, IOSP, FCoI, Boy Scout Rule, VCS         (Baseline: jetzt)
-✅ Orange — SRP, SoC, Conventions, Reviews, Integration Tests   (Baseline: jetzt)
-🎯 Gelb  — DIP, ISP, Unit Tests, Mocks, Code Coverage          (Ziel: Q3)
-🎯 Grün  — OCP, CI, Static Analysis, IoC Container             (Ziel: Q4)
+✅ Rot    — DRY, KISS, IOSP, FCoI, Boy Scout Rule, VCS              (Baseline: jetzt)
+✅ Orange — SRP, SoC, Conventions, Reviews, Integration Tests        (Baseline: jetzt)
+🔧 Gelb  — DIP, ISP, Unit Tests, Mocks, Code Coverage               (Ziel: Q3)
+            → Lint-Schicht 1 (hart) + Schicht 2 (warn) vorbereitet  (✅ done)
+🎯 Grün  — OCP, CI, Static Analysis scharf (alle Schicht-2 → hart)  (Ziel: Q4)
 ```
 
 ### Daily Reflection (für jeden Entwickler)

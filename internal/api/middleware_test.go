@@ -39,7 +39,7 @@ func TestRecovery_Returns500_OnPanic(t *testing.T) {
 }
 
 func TestTimeout_Returns503_WhenHandlerExceedsDeadline(t *testing.T) {
-	handler := api.Timeout(10*time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handler := api.Timeout(10 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case <-time.After(500 * time.Millisecond):
 		case <-r.Context().Done():
