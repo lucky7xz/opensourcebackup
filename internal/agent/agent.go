@@ -2,28 +2,30 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
+	agentclient "github.com/cerberus8484/opensourcebackup/internal/agent/client"
 	"github.com/cerberus8484/opensourcebackup/internal/agent/restic"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
 // ControlPlaneClient is the interface the agent uses to talk to the control plane.
-// Defined here so the agent package does not import the concrete HTTP client (DIP).
+// Defined here (DIP) so the agent package does not import the concrete HTTP client.
 type ControlPlaneClient interface {
-	ListPendingJobs(ctx context.Context, systemID uuid.UUID) ([]catalog.BackupJob, error)
+	ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error)
 	GetPolicy(ctx context.Context, id uuid.UUID) (*catalog.BackupPolicy, error)
-	UpdateJobStatus(ctx context.Context, job *catalog.BackupJob) error
-	CreateSnapshot(ctx context.Context, s *catalog.Snapshot) error
+	StartJob(ctx context.Context, jobID uuid.UUID) error
+	CompleteJob(ctx context.Context, jobID uuid.UUID, snapshotID string, bytesUploaded int64, paths []string) error
+	FailJob(ctx context.Context, jobID uuid.UUID, reason string) error
 }
 
 // Config holds all runtime parameters for the agent.
 type Config struct {
-	SystemID       uuid.UUID
 	PollInterval   time.Duration
 	ResticBin      string
 	ResticPassword string
@@ -48,37 +50,45 @@ func New(cfg Config, cp ControlPlaneClient, log *slog.Logger) *Agent {
 	}
 }
 
-// Run starts the poll loop and blocks until ctx is canceled.
+// Run starts the poll loop and blocks until ctx is canceled or a fatal error occurs.
+// Returns a non-nil error if the agent token is rejected (re-enrollment required).
 func (a *Agent) Run(ctx context.Context) error {
-	a.log.Info("agent started",
-		"system_id", a.cfg.SystemID,
-		"poll_interval", a.cfg.PollInterval,
-	)
+	a.log.Info("agent started", "poll_interval", a.cfg.PollInterval)
+
 	ticker := time.NewTicker(a.cfg.PollInterval)
 	defer ticker.Stop()
 
-	// Run once immediately, then on each tick.
-	a.poll(ctx)
+	// Poll once immediately, then on each tick.
+	if err := a.poll(ctx); err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			a.log.Info("agent stopped")
 			return nil
 		case <-ticker.C:
-			a.poll(ctx)
+			if err := a.poll(ctx); err != nil {
+				return err
+			}
 		}
 	}
 }
 
-func (a *Agent) poll(ctx context.Context) {
-	jobs, err := a.cp.ListPendingJobs(ctx, a.cfg.SystemID)
+func (a *Agent) poll(ctx context.Context) error {
+	jobs, err := a.cp.ListPendingJobs(ctx)
 	if err != nil {
+		if isUnauthorized(err) {
+			a.log.Error("agent token rejected — re-enrollment required")
+			return err
+		}
 		a.log.Warn("poll failed", "error", err)
-		return
+		return nil // transient error — keep polling
 	}
 	for _, job := range jobs {
 		a.executeJob(ctx, job)
 	}
+	return nil
 }
 
 func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
@@ -87,56 +97,38 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 	policy, err := a.cp.GetPolicy(ctx, job.PolicyID)
 	if err != nil {
 		log.Error("get policy failed", "error", err)
-		a.failJob(ctx, &job, fmt.Sprintf("get policy: %s", err))
+		a.doFail(ctx, log, job.ID, fmt.Sprintf("get policy: %s", err))
 		return
 	}
-
-	job.Status = "running"
-	now := time.Now()
-	job.StartedAt = &now
-	if err := a.cp.UpdateJobStatus(ctx, &job); err != nil {
-		log.Error("mark running failed", "error", err)
-		return
-	}
-	log.Info("job started", "engine", policy.Engine, "includes", policy.Includes)
 
 	if policy.RepositoryID == nil {
-		a.failJob(ctx, &job, "policy has no repository configured")
+		a.doFail(ctx, log, job.ID, "policy has no repository configured")
 		log.Error("policy has no repository_id — cannot determine backup target")
 		return
 	}
+
+	if err := a.cp.StartJob(ctx, job.ID); err != nil {
+		log.Error("mark job running failed", "error", err)
+		return
+	}
+	log.Info("job started", "engine", policy.Engine, "includes", policy.Includes)
 
 	result, err := a.runner.Backup(ctx, restic.BackupOptions{
 		Repo:     a.cfg.ResticRepo,
 		Password: a.cfg.ResticPassword,
 		Includes: policy.Includes,
 		Excludes: policy.Excludes,
-		Tags:     []string{fmt.Sprintf("system=%s", a.cfg.SystemID), fmt.Sprintf("policy=%s", policy.ID)},
+		Tags:     []string{fmt.Sprintf("policy=%s", policy.ID)},
 	})
 	if err != nil {
 		log.Error("backup failed", "error", err)
-		a.failJob(ctx, &job, err.Error())
+		a.doFail(ctx, log, job.ID, err.Error())
 		return
 	}
 
-	finished := time.Now()
-	job.Status = "success"
-	job.FinishedAt = &finished
-	job.BytesUploaded = &result.BytesAdded
-	if err := a.cp.UpdateJobStatus(ctx, &job); err != nil {
-		log.Error("update job success failed", "error", err)
-	}
-
-	snap := &catalog.Snapshot{
-		JobID:            job.ID,
-		RepositoryID:     *policy.RepositoryID,
-		EngineSnapshotID: result.SnapshotID,
-		Hostname:         strPtr(getHostname()),
-		Paths:            policy.Includes,
-		ChecksumStatus:   "unverified",
-	}
-	if err := a.cp.CreateSnapshot(ctx, snap); err != nil {
-		log.Error("register snapshot failed", "error", err)
+	if err := a.cp.CompleteJob(ctx, job.ID, result.SnapshotID, result.BytesAdded, policy.Includes); err != nil {
+		log.Error("complete job failed", "error", err)
+		return
 	}
 
 	log.Info("job completed",
@@ -147,12 +139,12 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 	)
 }
 
-func (a *Agent) failJob(ctx context.Context, job *catalog.BackupJob, reason string) {
-	now := time.Now()
-	job.Status = "failed"
-	job.FinishedAt = &now
-	job.ErrorSummary = &reason
-	if err := a.cp.UpdateJobStatus(ctx, job); err != nil {
-		a.log.Error("fail job update failed", "error", err)
+func (a *Agent) doFail(ctx context.Context, log *slog.Logger, jobID uuid.UUID, reason string) {
+	if err := a.cp.FailJob(ctx, jobID, reason); err != nil {
+		log.Error("fail job update failed", "error", err)
 	}
+}
+
+func isUnauthorized(err error) bool {
+	return errors.Is(err, agentclient.ErrUnauthorized)
 }

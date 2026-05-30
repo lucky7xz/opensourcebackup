@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -15,30 +16,34 @@ import (
 
 const defaultTimeout = 30 * time.Second
 
-// Client communicates with the OpensourceBackup control plane.
+// ErrUnauthorized is returned when the control plane rejects the agent token.
+// The agent should stop and be re-enrolled.
+var ErrUnauthorized = errors.New("agent: unauthorized — token revoked or invalid")
+
+// Client communicates with the OpensourceBackup control plane using
+// the authenticated /v1/agent/* routes.
 type Client struct {
 	baseURL    string
-	apiKey     string
+	token      string // Bearer token — never log this
 	httpClient *http.Client
 }
 
-// New creates a Client pointing at baseURL.
-// apiKey is sent as X-API-Key header (placeholder until mTLS in B9).
-func New(baseURL, apiKey string) *Client {
+// New creates a Client pointing at baseURL with the given bearer token.
+func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: baseURL,
-		apiKey:  apiKey,
+		token:   token,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
 	}
 }
 
-// ListPendingJobs returns all pending jobs for the given system.
-func (c *Client) ListPendingJobs(ctx context.Context, systemID uuid.UUID) ([]catalog.BackupJob, error) {
-	url := fmt.Sprintf("%s/v1/jobs?system_id=%s&status=pending", c.baseURL, systemID)
+// ListPendingJobs returns pending jobs for the authenticated system.
+// The system is identified by the bearer token — no system_id parameter needed.
+func (c *Client) ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error) {
 	var jobs []catalog.BackupJob
-	if err := c.get(ctx, url, &jobs); err != nil {
+	if err := c.get(ctx, c.baseURL+"/v1/agent/jobs", &jobs); err != nil {
 		return nil, fmt.Errorf("list pending jobs: %w", err)
 	}
 	return jobs, nil
@@ -54,22 +59,52 @@ func (c *Client) GetPolicy(ctx context.Context, id uuid.UUID) (*catalog.BackupPo
 	return &p, nil
 }
 
-// UpdateJobStatus updates the job's status and optional metrics.
-func (c *Client) UpdateJobStatus(ctx context.Context, job *catalog.BackupJob) error {
-	url := fmt.Sprintf("%s/v1/jobs/%s", c.baseURL, job.ID)
-	if err := c.put(ctx, url, job); err != nil {
-		return fmt.Errorf("update job %s: %w", job.ID, err)
+// StartJob marks a job as running.
+func (c *Client) StartJob(ctx context.Context, jobID uuid.UUID) error {
+	url := fmt.Sprintf("%s/v1/agent/jobs/%s/start", c.baseURL, jobID)
+	if err := c.put(ctx, url, nil); err != nil {
+		return fmt.Errorf("start job %s: %w", jobID, err)
 	}
 	return nil
 }
 
-// CreateSnapshot registers a completed snapshot with the control plane.
-func (c *Client) CreateSnapshot(ctx context.Context, s *catalog.Snapshot) error {
-	if err := c.post(ctx, c.baseURL+"/v1/snapshots", s, s); err != nil {
-		return fmt.Errorf("create snapshot: %w", err)
+// CompleteJob marks a job as successful and registers the resulting snapshot.
+func (c *Client) CompleteJob(ctx context.Context, jobID uuid.UUID, snapshotID string, bytesUploaded int64, paths []string) error {
+	url := fmt.Sprintf("%s/v1/agent/jobs/%s/complete", c.baseURL, jobID)
+	body := map[string]any{
+		"engine_snapshot_id": snapshotID,
+		"bytes_uploaded":     bytesUploaded,
+		"paths":              paths,
+	}
+	if err := c.put(ctx, url, body); err != nil {
+		return fmt.Errorf("complete job %s: %w", jobID, err)
 	}
 	return nil
 }
+
+// FailJob marks a job as failed with an error summary.
+func (c *Client) FailJob(ctx context.Context, jobID uuid.UUID, reason string) error {
+	url := fmt.Sprintf("%s/v1/agent/jobs/%s/fail", c.baseURL, jobID)
+	body := map[string]any{"error_summary": reason}
+	if err := c.put(ctx, url, body); err != nil {
+		return fmt.Errorf("fail job %s: %w", jobID, err)
+	}
+	return nil
+}
+
+// Enroll exchanges a one-time enrollment token for a long-lived agent token.
+func (c *Client) Enroll(ctx context.Context, enrollmentToken string) (string, error) {
+	body := map[string]string{"enrollment_token": enrollmentToken}
+	var resp struct {
+		Token string `json:"token"`
+	}
+	if err := c.post(ctx, c.baseURL+"/v1/agent/enroll", body, &resp); err != nil {
+		return "", fmt.Errorf("enroll: %w", err)
+	}
+	return resp.Token, nil
+}
+
+// ── internal helpers ─────────────────────────────────────────────────────────
 
 func (c *Client) get(ctx context.Context, url string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -82,6 +117,9 @@ func (c *Client) get(ctx context.Context, url string, out any) error {
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck // HTTP response body close errors are not actionable
+	if resp.StatusCode == http.StatusUnauthorized {
+		return ErrUnauthorized
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
@@ -97,9 +135,13 @@ func (c *Client) post(ctx context.Context, url string, body any, out any) error 
 }
 
 func (c *Client) sendJSON(ctx context.Context, method, url string, body any, out any) error {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return err
+	var b []byte
+	var err error
+	if body != nil {
+		b, err = json.Marshal(body)
+		if err != nil {
+			return err
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(b))
 	if err != nil {
@@ -111,7 +153,10 @@ func (c *Client) sendJSON(ctx context.Context, method, url string, body any, out
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close() //nolint:errcheck // HTTP response body close errors are not actionable
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode == http.StatusUnauthorized {
+		return ErrUnauthorized
+	}
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
@@ -122,7 +167,8 @@ func (c *Client) sendJSON(ctx context.Context, method, url string, body any, out
 }
 
 func (c *Client) setHeaders(req *http.Request) {
-	if c.apiKey != "" {
-		req.Header.Set("X-API-Key", c.apiKey)
+	if c.token != "" {
+		// Never log the Authorization header
+		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 }

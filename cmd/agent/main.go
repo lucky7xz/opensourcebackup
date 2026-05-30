@@ -9,76 +9,107 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/cerberus8484/opensourcebackup/internal/agent"
 	agentclient "github.com/cerberus8484/opensourcebackup/internal/agent/client"
 )
 
-const defaultPollInterval = 30 * time.Second
+const (
+	defaultPollInterval  = 30 * time.Second
+	defaultTokenFilePath = "data/agent-token"
+)
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	cfg, err := loadConfig()
+	controlPlaneURL := requireEnv(logger, "CONTROL_PLANE_URL")
+	resticPassword := requireEnv(logger, "RESTIC_PASSWORD")
+	resticRepo := requireEnv(logger, "RESTIC_REPO")
+
+	token, err := resolveToken(logger, controlPlaneURL)
 	if err != nil {
-		logger.Error("invalid configuration", "error", err)
+		logger.Error("failed to obtain agent token", "error", err)
 		os.Exit(1)
 	}
 
-	cp := agentclient.New(cfg.controlPlaneURL, cfg.apiKey)
-	a := agent.New(cfg.agentConfig, cp, logger)
+	poll := defaultPollInterval
+	if v := os.Getenv("AGENT_POLL_INTERVAL"); v != "" {
+		if d, parseErr := time.ParseDuration(v); parseErr == nil {
+			poll = d
+		}
+	}
+
+	cp := agentclient.New(controlPlaneURL, token)
+	a := agent.New(agent.Config{
+		PollInterval:   poll,
+		ResticBin:      os.Getenv("RESTIC_BIN"),
+		ResticPassword: resticPassword,
+		ResticRepo:     resticRepo,
+	}, cp, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := a.Run(ctx); err != nil {
-		logger.Error("agent error", "error", err)
+		logger.Error("agent stopped with error", "error", err)
 		os.Exit(1)
 	}
 }
 
-type config struct {
-	controlPlaneURL string
-	apiKey          string
-	agentConfig     agent.Config
-}
+// resolveToken returns an agent token using the following priority:
+//  1. AGENT_TOKEN env var (direct)
+//  2. Token file at AGENT_TOKEN_FILE (or default path)
+//  3. Enroll using ENROLLMENT_TOKEN, save token to file
+//  4. Abort if nothing works
+func resolveToken(logger *slog.Logger, controlPlaneURL string) (string, error) {
+	// 1. Direct env var (highest priority)
+	if t := os.Getenv("AGENT_TOKEN"); t != "" {
+		logger.Info("using agent token from AGENT_TOKEN env var")
+		return t, nil
+	}
 
-func loadConfig() (config, error) {
-	controlPlaneURL := requireEnv("CONTROL_PLANE_URL")
-	systemIDStr := requireEnv("SYSTEM_ID")
-	resticPassword := requireEnv("RESTIC_PASSWORD")
-	resticRepo := requireEnv("RESTIC_REPO")
+	// 2. Token file
+	tokenFile := os.Getenv("AGENT_TOKEN_FILE")
+	if tokenFile == "" {
+		tokenFile = defaultTokenFilePath
+	}
+	if t, err := agent.LoadToken(tokenFile); err != nil {
+		return "", fmt.Errorf("load token file %s: %w", tokenFile, err)
+	} else if t != "" {
+		logger.Info("using agent token from file", "path", tokenFile)
+		return t, nil
+	}
 
-	systemID, err := uuid.Parse(systemIDStr)
+	// 3. Enroll with one-time enrollment token
+	enrollmentToken := os.Getenv("ENROLLMENT_TOKEN")
+	if enrollmentToken == "" {
+		return "", fmt.Errorf(
+			"no agent token available — set AGENT_TOKEN, create %s, or set ENROLLMENT_TOKEN",
+			tokenFile,
+		)
+	}
+
+	logger.Info("no agent token found — enrolling with enrollment token")
+	// Use an unauthenticated client for enrollment (no bearer token yet)
+	enrollClient := agentclient.New(controlPlaneURL, "")
+	agentToken, err := enrollClient.Enroll(context.Background(), enrollmentToken)
 	if err != nil {
-		return config{}, fmt.Errorf("SYSTEM_ID is not a valid UUID: %w", err)
+		return "", fmt.Errorf("enrollment failed: %w", err)
 	}
 
-	poll := defaultPollInterval
-	if v := os.Getenv("AGENT_POLL_INTERVAL"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			poll = d
-		}
+	if err := agent.SaveToken(tokenFile, agentToken); err != nil {
+		// Non-fatal: token was obtained, just couldn't persist it
+		logger.Warn("could not save agent token to file", "path", tokenFile, "error", err)
+	} else {
+		logger.Info("agent token saved", "path", tokenFile)
 	}
 
-	return config{
-		controlPlaneURL: controlPlaneURL,
-		apiKey:          os.Getenv("AGENT_API_KEY"),
-		agentConfig: agent.Config{
-			SystemID:       systemID,
-			PollInterval:   poll,
-			ResticBin:      os.Getenv("RESTIC_BIN"),
-			ResticPassword: resticPassword,
-			ResticRepo:     resticRepo,
-		},
-	}, nil
+	return agentToken, nil
 }
 
-func requireEnv(key string) string {
+func requireEnv(logger *slog.Logger, key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		slog.Error("required environment variable not set", "key", key)
+		logger.Error("required environment variable not set", "key", key)
 		os.Exit(1)
 	}
 	return v

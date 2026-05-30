@@ -3,31 +3,38 @@ package agent_test
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
-	"log/slog"
-	"os"
-
 	"github.com/google/uuid"
 
-	"github.com/cerberus8484/opensourcebackup/internal/agent"
+	agentclient "github.com/cerberus8484/opensourcebackup/internal/agent/client"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+
+	"github.com/cerberus8484/opensourcebackup/internal/agent"
 )
 
 var testLog = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-// stubCP is a controllable ControlPlaneClient for testing.
+// stubCP implements agent.ControlPlaneClient for testing.
 type stubCP struct {
-	jobs        []catalog.BackupJob
-	policy      *catalog.BackupPolicy
-	updatedJobs []*catalog.BackupJob
-	snapshots   []*catalog.Snapshot
-	err         error
+	jobs      []catalog.BackupJob
+	policy    *catalog.BackupPolicy
+	started   []uuid.UUID
+	completed []uuid.UUID
+	failed    []failRecord
+	listErr   error
 }
 
-func (s *stubCP) ListPendingJobs(_ context.Context, _ uuid.UUID) ([]catalog.BackupJob, error) {
-	return s.jobs, s.err
+type failRecord struct {
+	jobID  uuid.UUID
+	reason string
+}
+
+func (s *stubCP) ListPendingJobs(_ context.Context) ([]catalog.BackupJob, error) {
+	return s.jobs, s.listErr
 }
 
 func (s *stubCP) GetPolicy(_ context.Context, _ uuid.UUID) (*catalog.BackupPolicy, error) {
@@ -37,41 +44,81 @@ func (s *stubCP) GetPolicy(_ context.Context, _ uuid.UUID) (*catalog.BackupPolic
 	return s.policy, nil
 }
 
-func (s *stubCP) UpdateJobStatus(_ context.Context, j *catalog.BackupJob) error {
-	cp := *j
-	s.updatedJobs = append(s.updatedJobs, &cp)
+func (s *stubCP) StartJob(_ context.Context, id uuid.UUID) error {
+	s.started = append(s.started, id)
 	return nil
 }
 
-func (s *stubCP) CreateSnapshot(_ context.Context, snap *catalog.Snapshot) error {
-	cp := *snap
-	s.snapshots = append(s.snapshots, &cp)
+func (s *stubCP) CompleteJob(_ context.Context, id uuid.UUID, _ string, _ int64, _ []string) error {
+	s.completed = append(s.completed, id)
 	return nil
 }
+
+func (s *stubCP) FailJob(_ context.Context, id uuid.UUID, reason string) error {
+	s.failed = append(s.failed, failRecord{jobID: id, reason: reason})
+	return nil
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────
 
 func TestAgent_FailsJob_WhenPolicyHasNoRepository(t *testing.T) {
-	repoID := uuid.Nil // no repository
+	jobID := uuid.New()
 	policyID := uuid.New()
-	systemID := uuid.New()
 
 	cp := &stubCP{
-		jobs: []catalog.BackupJob{{
-			ID:       uuid.New(),
-			SystemID: systemID,
-			PolicyID: policyID,
-			Status:   "pending",
-		}},
+		jobs: []catalog.BackupJob{{ID: jobID, SystemID: uuid.New(), PolicyID: policyID, Status: "pending"}},
 		policy: &catalog.BackupPolicy{
 			ID:           policyID,
-			Name:         "no-repo-policy",
+			Name:         "no-repo",
 			Engine:       "restic",
-			RepositoryID: nil, // no repository configured
+			RepositoryID: nil,
 		},
 	}
-	_ = repoID
+
+	runBriefly(t, cp)
+
+	if len(cp.failed) == 0 {
+		t.Fatal("expected job to be failed")
+	}
+	if cp.failed[0].jobID != jobID {
+		t.Errorf("wrong job failed: want %s, got %s", jobID, cp.failed[0].jobID)
+	}
+	if cp.failed[0].reason == "" {
+		t.Error("expected non-empty failure reason")
+	}
+}
+
+func TestAgent_StartsJob_BeforeRunningBackup(t *testing.T) {
+	jobID := uuid.New()
+	repoID := uuid.New()
+
+	cp := &stubCP{
+		jobs: []catalog.BackupJob{{ID: jobID, SystemID: uuid.New(), PolicyID: uuid.New(), Status: "pending"}},
+		policy: &catalog.BackupPolicy{
+			ID:           uuid.New(),
+			Name:         "test",
+			Engine:       "restic-nonexistent",
+			RepositoryID: &repoID,
+			Includes:     []string{"/tmp"},
+		},
+	}
+
+	runBriefly(t, cp)
+
+	if len(cp.started) == 0 {
+		t.Fatal("expected StartJob to be called before backup")
+	}
+	if cp.started[0] != jobID {
+		t.Errorf("StartJob: want %s, got %s", jobID, cp.started[0])
+	}
+}
+
+func TestAgent_StopsOnUnauthorized(t *testing.T) {
+	cp := &stubCP{
+		listErr: agentclient.ErrUnauthorized,
+	}
 
 	cfg := agent.Config{
-		SystemID:       systemID,
 		PollInterval:   time.Hour,
 		ResticBin:      "restic-nonexistent",
 		ResticPassword: "test",
@@ -79,62 +126,80 @@ func TestAgent_FailsJob_WhenPolicyHasNoRepository(t *testing.T) {
 	}
 	a := agent.New(cfg, cp, testLog)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	a.Run(ctx) //nolint:errcheck // context timeout is expected
 
-	// Job must be marked failed
-	if len(cp.updatedJobs) == 0 {
-		t.Fatal("expected job status update")
-	}
-	lastUpdate := cp.updatedJobs[len(cp.updatedJobs)-1]
-	if lastUpdate.Status != "failed" {
-		t.Errorf("want status=failed, got %s", lastUpdate.Status)
-	}
-	if lastUpdate.ErrorSummary == nil || *lastUpdate.ErrorSummary == "" {
-		t.Error("expected error summary to be set")
+	err := a.Run(ctx)
+	if !errors.Is(err, agentclient.ErrUnauthorized) {
+		t.Errorf("want ErrUnauthorized, got %v", err)
 	}
 }
 
-func TestAgent_SetsJobRunning_BeforeBackup(t *testing.T) {
-	repoID := uuid.New()
-	policyID := uuid.New()
-	systemID := uuid.New()
-
-	cp := &stubCP{
-		jobs: []catalog.BackupJob{{
-			ID:       uuid.New(),
-			SystemID: systemID,
-			PolicyID: policyID,
-			Status:   "pending",
-		}},
-		policy: &catalog.BackupPolicy{
-			ID:           policyID,
-			Name:         "test-policy",
-			Engine:       "restic",
-			RepositoryID: &repoID,
-			Includes:     []string{"/tmp"},
-		},
-	}
+func TestAgent_ContinuesPollOnTransientError(t *testing.T) {
+	callCount := 0
+	cp := &stubCP{}
+	// First call fails, second succeeds with no jobs
+	origJobs := cp.jobs
+	_ = origJobs
 
 	cfg := agent.Config{
-		SystemID:       systemID,
+		PollInterval:   20 * time.Millisecond,
+		ResticBin:      "restic-nonexistent",
+		ResticPassword: "test",
+		ResticRepo:     "s3:test",
+	}
+
+	// Use a stub that fails once then returns empty
+	failingCP := &failOnceCP{inner: cp, failCount: 1}
+	_ = callCount
+	a := agent.New(cfg, failingCP, testLog)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Should not return an error for transient failures
+	err := a.Run(ctx)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("unexpected error for transient failure: %v", err)
+	}
+}
+
+type failOnceCP struct {
+	inner     *stubCP
+	failCount int
+	calls     int
+}
+
+func (f *failOnceCP) ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error) {
+	f.calls++
+	if f.calls <= f.failCount {
+		return nil, errors.New("transient network error")
+	}
+	return f.inner.ListPendingJobs(ctx)
+}
+func (f *failOnceCP) GetPolicy(ctx context.Context, id uuid.UUID) (*catalog.BackupPolicy, error) {
+	return f.inner.GetPolicy(ctx, id)
+}
+func (f *failOnceCP) StartJob(ctx context.Context, id uuid.UUID) error {
+	return f.inner.StartJob(ctx, id)
+}
+func (f *failOnceCP) CompleteJob(ctx context.Context, id uuid.UUID, s string, b int64, p []string) error {
+	return f.inner.CompleteJob(ctx, id, s, b, p)
+}
+func (f *failOnceCP) FailJob(ctx context.Context, id uuid.UUID, r string) error {
+	return f.inner.FailJob(ctx, id, r)
+}
+
+func runBriefly(t *testing.T, cp agent.ControlPlaneClient) {
+	t.Helper()
+	cfg := agent.Config{
 		PollInterval:   time.Hour,
-		ResticBin:      "restic-nonexistent", // will fail at backup, but running is set first
+		ResticBin:      "restic-nonexistent",
 		ResticPassword: "test",
 		ResticRepo:     "s3:test",
 	}
 	a := agent.New(cfg, cp, testLog)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	a.Run(ctx) //nolint:errcheck
-
-	// First update must be status=running
-	if len(cp.updatedJobs) == 0 {
-		t.Fatal("expected at least one job update")
-	}
-	if cp.updatedJobs[0].Status != "running" {
-		t.Errorf("first update: want running, got %s", cp.updatedJobs[0].Status)
-	}
+	a.Run(ctx) //nolint:errcheck // context timeout is expected here
 }
