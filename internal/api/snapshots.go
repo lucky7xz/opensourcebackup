@@ -24,7 +24,7 @@ func (h *Handler) listSnapshots(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createSnapshot(w http.ResponseWriter, r *http.Request) {
 	var s catalog.Snapshot
 	if err := decode(r, &s); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	if s.JobID == (uuid.UUID{}) {

@@ -9,6 +9,9 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
+// ErrBodyTooLarge is returned by decode when the request body exceeds the configured limit.
+var ErrBodyTooLarge = errors.New("request body too large")
+
 // Handler holds all store dependencies for the HTTP API.
 type Handler struct {
 	systems      catalog.SystemStore
@@ -51,7 +54,23 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 func decode(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return ErrBodyTooLarge
+		}
+		return err
+	}
+	return nil
+}
+
+// handleDecodeError writes the appropriate HTTP error for a decode failure.
+func handleDecodeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrBodyTooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		return
+	}
+	writeError(w, http.StatusBadRequest, "invalid request body")
 }
 
 // httpStatusForError maps catalog errors to HTTP status codes.

@@ -24,7 +24,7 @@ func (h *Handler) listJobs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createJob(w http.ResponseWriter, r *http.Request) {
 	var j catalog.BackupJob
 	if err := decode(r, &j); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	if j.SystemID == (uuid.UUID{}) {
@@ -68,7 +68,7 @@ func (h *Handler) updateJob(w http.ResponseWriter, r *http.Request) {
 	}
 	var j catalog.BackupJob
 	if err := decode(r, &j); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	j.ID = id

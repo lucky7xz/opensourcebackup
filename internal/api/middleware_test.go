@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,59 @@ func TestTimeout_Returns503_WhenHandlerExceedsDeadline(t *testing.T) {
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/slow", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("want 503, got %d", rec.Code)
+	}
+}
+
+func TestSecurityHeaders_SetsAllRequiredHeaders(t *testing.T) {
+	handler := api.SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+
+	required := map[string]string{
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"X-Xss-Protection":          "1; mode=block",
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Content-Security-Policy":   "default-src 'self'",
+		"Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+	}
+	for header, want := range required {
+		if got := rec.Header().Get(header); got != want {
+			t.Errorf("header %s: want %q, got %q", header, want, got)
+		}
+	}
+}
+
+func TestRequestBodyLimit_Returns413_WhenBodyExceedsLimit(t *testing.T) {
+	handler := api.RequestBodyLimit(10)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 100)
+		if _, err := r.Body.Read(buf); err != nil {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		}
+	}))
+
+	body := strings.NewReader("this body is definitely longer than ten bytes")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("POST", "/", body))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("want 413, got %d", rec.Code)
+	}
+}
+
+func TestRequestBodyLimit_PassesThrough_WhenBodyWithinLimit(t *testing.T) {
+	called := false
+	handler := api.RequestBodyLimit(1024)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("POST", "/", strings.NewReader(`{"key":"val"}`)))
+	if !called {
+		t.Error("expected handler to be called for small body")
 	}
 }
 

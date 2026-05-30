@@ -61,6 +61,33 @@ func Timeout(d time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
+// SecurityHeaders sets hardened HTTP response headers on every response.
+// Note: Strict-Transport-Security is included but only takes effect over TLS.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-XSS-Protection", "1; mode=block")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy", "default-src 'self'")
+		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequestBodyLimit caps incoming request bodies at maxBytes.
+// Requests exceeding the limit cause json.Decoder to return *http.MaxBytesError,
+// which decode() maps to ErrBodyTooLarge → HTTP 413.
+func RequestBodyLimit(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Chain applies middleware in order: first in the slice wraps outermost.
 // Example: Chain(handler, Recovery(log), Logging(log), Timeout(5*time.Second))
 func Chain(h http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {

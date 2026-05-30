@@ -24,7 +24,7 @@ func (h *Handler) listPolicies(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createPolicy(w http.ResponseWriter, r *http.Request) {
 	var p catalog.BackupPolicy
 	if err := decode(r, &p); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	if p.Name == "" {
@@ -65,7 +65,7 @@ func (h *Handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	var p catalog.BackupPolicy
 	if err := decode(r, &p); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	p.ID = id

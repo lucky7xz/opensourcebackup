@@ -24,7 +24,7 @@ func (h *Handler) listRepositories(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createRepository(w http.ResponseWriter, r *http.Request) {
 	var repo catalog.BackupRepository
 	if err := decode(r, &repo); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	if repo.Type == "" {
@@ -65,7 +65,7 @@ func (h *Handler) updateRepository(w http.ResponseWriter, r *http.Request) {
 	}
 	var repo catalog.BackupRepository
 	if err := decode(r, &repo); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	repo.ID = id

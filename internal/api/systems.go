@@ -24,7 +24,7 @@ func (h *Handler) listSystems(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createSystem(w http.ResponseWriter, r *http.Request) {
 	var s catalog.System
 	if err := decode(r, &s); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	if s.Hostname == "" {
@@ -64,7 +64,7 @@ func (h *Handler) updateSystem(w http.ResponseWriter, r *http.Request) {
 	}
 	var s catalog.System
 	if err := decode(r, &s); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		handleDecodeError(w, err)
 		return
 	}
 	s.ID = id

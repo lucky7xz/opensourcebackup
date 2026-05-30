@@ -14,6 +14,16 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/scheduler"
 )
 
+const (
+	serverReadTimeout       = 10 * time.Second
+	serverReadHeaderTimeout = 5 * time.Second
+	serverWriteTimeout      = 35 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	serverShutdownTimeout   = 10 * time.Second
+	requestHandlerTimeout   = 30 * time.Second
+	maxRequestBodyBytes     = 1 << 20 // 1 MB
+)
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
@@ -60,8 +70,10 @@ func main() {
 
 	httpHandler := api.Chain(mux,
 		api.Recovery(logger),
+		api.SecurityHeaders,
+		api.RequestBodyLimit(maxRequestBodyBytes),
 		api.Logging(logger),
-		api.Timeout(30*time.Second),
+		api.Timeout(requestHandlerTimeout),
 	)
 
 	addr := os.Getenv("LISTEN_ADDR")
@@ -70,10 +82,12 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      httpHandler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 35 * time.Second,
+		Addr:              addr,
+		Handler:           httpHandler,
+		ReadTimeout:       serverReadTimeout,
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
 	}
 
 	go func() {
@@ -85,7 +99,7 @@ func main() {
 
 	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "error", err)
