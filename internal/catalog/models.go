@@ -28,16 +28,17 @@ type BackupRepository struct {
 }
 
 type BackupPolicy struct {
-	ID        uuid.UUID
-	Name      string
-	Includes  []string
-	Excludes  []string
-	Schedule  *string
-	Retention map[string]any
-	Engine    string
-	PreHooks  []string
-	PostHooks []string
-	CreatedAt time.Time
+	ID           uuid.UUID
+	Name         string
+	Includes     []string
+	Excludes     []string
+	Schedule     *string
+	Retention    map[string]any
+	Engine       string
+	PreHooks     []string
+	PostHooks    []string
+	RepositoryID *uuid.UUID // which repository this policy backs up to
+	CreatedAt    time.Time
 }
 
 // BackupJob and Snapshot are models only — repositories added in B3.

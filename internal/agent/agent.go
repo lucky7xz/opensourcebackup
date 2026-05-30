@@ -100,6 +100,12 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 	}
 	log.Info("job started", "engine", policy.Engine, "includes", policy.Includes)
 
+	if policy.RepositoryID == nil {
+		a.failJob(ctx, &job, "policy has no repository configured")
+		log.Error("policy has no repository_id — cannot determine backup target")
+		return
+	}
+
 	result, err := a.runner.Backup(ctx, restic.BackupOptions{
 		Repo:     a.cfg.ResticRepo,
 		Password: a.cfg.ResticPassword,
@@ -123,7 +129,7 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 
 	snap := &catalog.Snapshot{
 		JobID:            job.ID,
-		RepositoryID:     uuid.Nil, // set from policy/repo config in B12
+		RepositoryID:     *policy.RepositoryID,
 		EngineSnapshotID: result.SnapshotID,
 		Hostname:         strPtr(getHostname()),
 		Paths:            policy.Includes,

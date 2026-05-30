@@ -35,11 +35,12 @@ func (s *pgPolicyStore) Create(ctx context.Context, p *BackupPolicy) error {
 	}
 	row := s.db.pool.QueryRow(ctx, `
 		INSERT INTO backup_policies
-		  (name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		  (name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks, repository_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at`,
 		p.Name, orEmptySlice(p.Includes), orEmptySlice(p.Excludes), p.Schedule,
 		retentionJSON, p.Engine, orEmptySlice(p.PreHooks), orEmptySlice(p.PostHooks),
+		uuidPtrToRaw(p.RepositoryID),
 	)
 	var rawID pgtype.UUID
 	if err := row.Scan(&rawID, &p.CreatedAt); err != nil {
@@ -51,7 +52,7 @@ func (s *pgPolicyStore) Create(ctx context.Context, p *BackupPolicy) error {
 
 func (s *pgPolicyStore) GetByID(ctx context.Context, id uuid.UUID) (*BackupPolicy, error) {
 	row := s.db.pool.QueryRow(ctx, `
-		SELECT id, name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks, created_at
+		SELECT id, name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks, repository_id, created_at
 		FROM backup_policies WHERE id = $1`,
 		pgtype.UUID{Bytes: id, Valid: true},
 	)
@@ -64,7 +65,7 @@ func (s *pgPolicyStore) GetByID(ctx context.Context, id uuid.UUID) (*BackupPolic
 
 func (s *pgPolicyStore) List(ctx context.Context) ([]BackupPolicy, error) {
 	rows, err := s.db.pool.Query(ctx, `
-		SELECT id, name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks, created_at
+		SELECT id, name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks, repository_id, created_at
 		FROM backup_policies ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -90,10 +91,11 @@ func (s *pgPolicyStore) Update(ctx context.Context, p *BackupPolicy) error {
 	tag, err := s.db.pool.Exec(ctx, `
 		UPDATE backup_policies
 		SET name=$1, includes=$2, excludes=$3, schedule=$4,
-		    retention=$5, engine=$6, pre_hooks=$7, post_hooks=$8
-		WHERE id=$9`,
+		    retention=$5, engine=$6, pre_hooks=$7, post_hooks=$8, repository_id=$9
+		WHERE id=$10`,
 		p.Name, orEmptySlice(p.Includes), orEmptySlice(p.Excludes), p.Schedule,
 		retentionJSON, p.Engine, orEmptySlice(p.PreHooks), orEmptySlice(p.PostHooks),
+		uuidPtrToRaw(p.RepositoryID),
 		pgtype.UUID{Bytes: p.ID, Valid: true},
 	)
 	if err != nil {
@@ -129,15 +131,20 @@ func scanPolicy(row rowScanner) (*BackupPolicy, error) {
 	var (
 		p            BackupPolicy
 		rawID        pgtype.UUID
+		rawRepoID    pgtype.UUID
 		retentionRaw []byte
 	)
 	if err := row.Scan(
 		&rawID, &p.Name, &p.Includes, &p.Excludes, &p.Schedule,
-		&retentionRaw, &p.Engine, &p.PreHooks, &p.PostHooks, &p.CreatedAt,
+		&retentionRaw, &p.Engine, &p.PreHooks, &p.PostHooks, &rawRepoID, &p.CreatedAt,
 	); err != nil {
 		return nil, err
 	}
 	p.ID = uuid.UUID(rawID.Bytes)
+	if rawRepoID.Valid {
+		id := uuid.UUID(rawRepoID.Bytes)
+		p.RepositoryID = &id
+	}
 	if len(retentionRaw) > 0 {
 		if err := json.Unmarshal(retentionRaw, &p.Retention); err != nil {
 			return nil, err
