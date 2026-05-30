@@ -1,24 +1,42 @@
 :root {
-  --bg-primary: #080c14;
-  --bg-card: #141824;
-  --bg-sidebar: #0d1220;
-  --accent-cyan: #00d4ff;
-  --accent-green: #00ff88;
-  --accent-orange: #ff9500;
-  --accent-red: #ff4757;
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --border: #1e2a3a;
-  --font-mono: 'JetBrains Mono', monospace;
+  --bg:          #0f1117;
+  --bg-card:     #181d2a;
+  --bg-sidebar:  #131720;
+  --bg-hover:    #1e2436;
+  --border:      #242b3d;
+  --border-light:#2d3650;
+
+  --success:  #22c55e;
+  --warning:  #f59e0b;
+  --error:    #f43f5e;
+  --running:  #60a5fa;
+  --pending:  #9ca3af;
+  --unknown:  #4b5563;
+
+  --text:       #e2e8f0;
+  --text-muted: #7d8fa0;
+  --text-dim:   #4a5568;
+
+  --accent:     #3b82f6;
+  --accent-dim: rgba(59,130,246,0.12);
+
+  --font-mono: 'JetBrains Mono', 'Fira Mono', monospace;
+  --radius: 8px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
 
 body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Inter', -apple-system, sans-serif;
-  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent-cyan); text-decoration: none; }
+a { color: var(--accent); text-decoration: none; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

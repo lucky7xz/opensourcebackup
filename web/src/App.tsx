@@ -1,25 +1,29 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { Sidebar } from './components/Sidebar'
-import { Dashboard } from './pages/Dashboard'
-import { Systems } from './pages/Systems'
-import { Jobs } from './pages/Jobs'
-import { Snapshots } from './pages/Snapshots'
-import { Policies } from './pages/Policies'
+import { Sidebar }      from './components/Sidebar'
+import { Dashboard }    from './pages/Dashboard'
+import { Systems }      from './pages/Systems'
+import { Agents }       from './pages/Agents'
+import { Policies }     from './pages/Policies'
+import { Jobs }         from './pages/Jobs'
+import { Snapshots }    from './pages/Snapshots'
+import { RestoreTests } from './pages/RestoreTests'
 import { Repositories } from './pages/Repositories'
 
 export default function App() {
   return (
     <BrowserRouter>
-      <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
         <Sidebar />
-        <main style={{ flex: 1, overflowY: 'auto' }}>
+        <main style={{ flex:1, overflowY:'auto', background:'var(--bg)' }}>
           <Routes>
-            <Route path="/"             element={<Dashboard />} />
-            <Route path="/systems"      element={<Systems />} />
-            <Route path="/jobs"         element={<Jobs />} />
-            <Route path="/snapshots"    element={<Snapshots />} />
-            <Route path="/policies"     element={<Policies />} />
-            <Route path="/repositories" element={<Repositories />} />
+            <Route path="/"              element={<Dashboard />} />
+            <Route path="/systems"       element={<Systems />} />
+            <Route path="/agents"        element={<Agents />} />
+            <Route path="/policies"      element={<Policies />} />
+            <Route path="/jobs"          element={<Jobs />} />
+            <Route path="/snapshots"     element={<Snapshots />} />
+            <Route path="/restore-tests" element={<RestoreTests />} />
+            <Route path="/repositories"  element={<Repositories />} />
           </Routes>
         </main>
       </div>
