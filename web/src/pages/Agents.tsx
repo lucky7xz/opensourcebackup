@@ -17,29 +17,34 @@ export function Agents() {
   const [selected, setSelected] = useState<string|null>(null)
   const [enrollCmd, setEnrollCmd] = useState<string|null>(null)
 
-  function generateEnrollCmd(agentType: string, os: string) {
-    const token = '<enrollment-token>'
+  function generateEnrollCmd(_agentType: string, os: string) {
+    const token = 'YOUR_ENROLLMENT_TOKEN_HERE'
     if (os === 'windows-amd64') {
       setEnrollCmd(
-`# 1. Download agent
-Invoke-WebRequest "${CP_URL}/downloads/agent/${VERSION}/windows-amd64" -OutFile opensourcebackup-agent.exe
+`# 1. Download agent (PowerShell)
+Invoke-WebRequest "${CP_URL}/downloads/agent/${VERSION}/windows-amd64" \`
+  -OutFile opensourcebackup-agent.exe
 
-# 2. Enroll (run once — saves token to data/agent-token)
-.\\opensourcebackup-agent.exe --profile ${agentType} enroll \`
-  --server ${CP_URL} \`
-  --enrollment-token ${token}
+# 2. Set environment variables and run
+# The agent enrolls automatically on first start (token saved to data\\agent-token)
+$env:CONTROL_PLANE_URL  = "${CP_URL}"
+$env:ENROLLMENT_TOKEN   = "${token}"
+$env:RESTIC_PASSWORD    = "YOUR_RESTIC_PASSWORD"
+$env:RESTIC_REPO        = "s3:your-bucket/backups/hostname"
+.\\opensourcebackup-agent.exe
 
-# 3. Run as service
-# sc create OSBAgent binpath= ".\\opensourcebackup-agent.exe --profile ${agentType}" start= auto
-# sc start OSBAgent`
+# 3. On subsequent starts (token already saved):
+$env:CONTROL_PLANE_URL  = "${CP_URL}"
+$env:RESTIC_PASSWORD    = "YOUR_RESTIC_PASSWORD"
+$env:RESTIC_REPO        = "s3:your-bucket/backups/hostname"
+.\\opensourcebackup-agent.exe`
       )
     } else if (os === 'helm') {
       setEnrollCmd(
 `helm repo add opensourcebackup ${CP_URL}/helm
 helm install opensourcebackup-agent opensourcebackup/agent \\
   --set controlPlane.url=${CP_URL} \\
-  --set enrollmentToken=${token} \\
-  --set profile=kubernetes`
+  --set enrollmentToken=${token}`
       )
     } else {
       setEnrollCmd(
@@ -48,25 +53,33 @@ curl -fsSL "${CP_URL}/downloads/agent/${VERSION}/${os}" \\
   -o /usr/local/bin/opensourcebackup-agent
 chmod +x /usr/local/bin/opensourcebackup-agent
 
-# 2. Enroll (run once — saves token to /etc/opensourcebackup/agent-token)
-opensourcebackup-agent --profile ${agentType} enroll \\
-  --server ${CP_URL} \\
-  --enrollment-token ${token}
+# 2. Create environment file
+mkdir -p /etc/opensourcebackup
+cat > /etc/opensourcebackup/agent.env << EOF
+CONTROL_PLANE_URL=${CP_URL}
+ENROLLMENT_TOKEN=${token}
+RESTIC_PASSWORD=YOUR_RESTIC_PASSWORD
+RESTIC_REPO=s3:your-bucket/backups/$(hostname)
+EOF
+chmod 600 /etc/opensourcebackup/agent.env
 
-# 3. Install as systemd service
-cat > /etc/systemd/system/opensourcebackup-agent.service << EOF
+# 3. First start — enrolls automatically (token saved to data/agent-token)
+opensourcebackup-agent
+
+# 4. Install as systemd service
+cat > /etc/systemd/system/opensourcebackup-agent.service << 'UNIT'
 [Unit]
 Description=OpenSourceBackup Agent
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/opensourcebackup-agent --profile ${agentType}
+ExecStart=/usr/local/bin/opensourcebackup-agent
 Restart=always
 EnvironmentFile=/etc/opensourcebackup/agent.env
 
 [Install]
 WantedBy=multi-user.target
-EOF
+UNIT
 
 systemctl enable --now opensourcebackup-agent`
       )
