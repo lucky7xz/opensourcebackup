@@ -38,8 +38,8 @@ func (s *pgPolicyStore) Create(ctx context.Context, p *BackupPolicy) error {
 		  (name, includes, excludes, schedule, retention, engine, pre_hooks, post_hooks)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at`,
-		p.Name, p.Includes, p.Excludes, p.Schedule,
-		retentionJSON, p.Engine, p.PreHooks, p.PostHooks,
+		p.Name, orEmptySlice(p.Includes), orEmptySlice(p.Excludes), p.Schedule,
+		retentionJSON, p.Engine, orEmptySlice(p.PreHooks), orEmptySlice(p.PostHooks),
 	)
 	var rawID pgtype.UUID
 	if err := row.Scan(&rawID, &p.CreatedAt); err != nil {
@@ -92,8 +92,8 @@ func (s *pgPolicyStore) Update(ctx context.Context, p *BackupPolicy) error {
 		SET name=$1, includes=$2, excludes=$3, schedule=$4,
 		    retention=$5, engine=$6, pre_hooks=$7, post_hooks=$8
 		WHERE id=$9`,
-		p.Name, p.Includes, p.Excludes, p.Schedule,
-		retentionJSON, p.Engine, p.PreHooks, p.PostHooks,
+		p.Name, orEmptySlice(p.Includes), orEmptySlice(p.Excludes), p.Schedule,
+		retentionJSON, p.Engine, orEmptySlice(p.PreHooks), orEmptySlice(p.PostHooks),
 		pgtype.UUID{Bytes: p.ID, Valid: true},
 	)
 	if err != nil {
@@ -116,6 +116,13 @@ func (s *pgPolicyStore) Delete(ctx context.Context, id uuid.UUID) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func orEmptySlice(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func scanPolicy(row rowScanner) (*BackupPolicy, error) {
