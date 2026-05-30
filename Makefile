@@ -1,4 +1,4 @@
-.PHONY: deps test test-integration lint lint-warn lint-install run \
+.PHONY: deps test test-integration fmt lint lint-warn check lint-install run \
         migrate-up migrate-down migrate-status \
         dev-up dev-down
 
@@ -19,21 +19,26 @@ test:
 test-integration:
 	DATABASE_URL=$(DATABASE_URL) go test -tags=integration ./...
 
+# ── Format ──────────────────────────────────────────────────────────────────
+fmt:
+	gofmt -w .
+	goimports -w -local github.com/cerberus8484/opensourcebackup .
+
 # ── Lint ────────────────────────────────────────────────────────────────────
-# Schicht 1: blockiert — Verletzung = kein Merge
+# Schicht 1: blockiert — Verletzung = kein Merge (siehe .golangci.hard.yml)
 lint:
-	golangci-lint run ./...
+	golangci-lint run --config .golangci.hard.yml ./...
 
-# Schicht 2: Baustellen sichtbar machen — blockiert nie
-# Linter die hier auftauchen, wandern nach einem Sprint in .golangci.yml Schicht 1
+# Schicht 2: Baustellen — blockiert nie (siehe .golangci.warn.yml)
 lint-warn:
-	golangci-lint run ./... \
-	  --enable revive,gocritic,cyclop,funlen,godot,exhaustive,wrapcheck,gomnd \
-	  --exit-code 0
+	golangci-lint run --config .golangci.warn.yml ./...
 
-# golangci-lint installieren (einmalig)
+# Alles in einem: fmt → lint → test
+check: fmt lint test
+
+# golangci-lint v2 installieren (einmalig)
 lint-install:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
 # ── Run ─────────────────────────────────────────────────────────────────────
 run:

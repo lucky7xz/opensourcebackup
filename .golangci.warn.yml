@@ -1,0 +1,54 @@
+version: "2"
+
+# Schicht 2 — Weiche Regeln
+# Zeigt Baustellen, blockiert nie (issues-exit-code: 0).
+# Reihenfolge = Priorität für Aufstieg in .golangci.hard.yml.
+# Ziel Q3: revive, gocritic, cyclop → hart
+# Ziel Q4: funlen, godot, exhaustive, wrapcheck, mnd, gosec → hart
+
+run:
+  timeout: 5m
+  issues-exit-code: 0   # niemals blockieren
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/cerberus8484/opensourcebackup
+
+linters:
+  default: none
+  enable:
+    # ── Pending Hart (false-positive in Tests blockiert Aufstieg) ───────────
+    - noctx           # HTTP ohne Context — in Production-Code zwingend; Tests: false-positive
+    # ── Q3 ───────────────────────────────────────────────────────────────────
+    - revive          # allgemeine Go-Idiome und Naming
+    - gocritic        # Anti-Patterns und Code-Qualität
+    - cyclop          # zyklomatische Komplexität > 10
+    # ── Q4 ───────────────────────────────────────────────────────────────────
+    - funlen          # Funktionen > 60 Zeilen
+    - godot           # Kommentare mit Punkt abschließen
+    - exhaustive      # nicht alle Enum-Fälle behandelt
+    - wrapcheck       # externe Fehler ohne %w gewrappt
+    - mnd             # magische Zahlen ohne benannte Konstante
+    - gosec           # Security-Schwachstellen
+    - nilnil          # nil-Fehler und nil-Rückgabe kombiniert
+    - prealloc        # slice-Allokierungen ohne Kapazität
+    - rowserrcheck    # sql.Rows.Err() nicht geprüft
+
+  settings:
+    cyclop:
+      max-complexity: 10
+    funlen:
+      lines: 60
+      statements: 40
+    revive:
+      rules:
+        - name: exported
+        - name: error-return
+        - name: error-naming
+        - name: if-return
+        - name: var-naming

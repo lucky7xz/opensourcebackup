@@ -1,0 +1,50 @@
+version: "2"
+
+# Schicht 1 — Harte Regeln
+# Verletzung = Build blockiert, kein Merge erlaubt.
+# Neue Regeln kommen immer zuerst in .golangci.warn.yml.
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/cerberus8484/opensourcebackup
+
+linters:
+  default: none
+  enable:
+    - errcheck       # verschluckte Fehler sind Bugs
+    - govet          # compiler-nahe Korrektheitsprüfungen
+    - staticcheck    # tote Pfade, falsche API-Nutzung (inkl. gosimple/stylecheck)
+    - unused         # toter Code erhöht kognitive Last
+    - ineffassign    # sinnlose Zuweisungen
+    - misspell       # Tippfehler in Bezeichnern und Kommentaren
+    - bodyclose      # HTTP-Response-Bodies die nicht geschlossen werden leaken
+    - sqlclosecheck  # nicht geschlossene pgx.Rows / sql.Rows
+    # noctx ist in .golangci.warn.yml:
+    # httptest.NewRequest triggert false-positive in Tests (v2-exclusion greift nicht).
+    # Für Production HTTP-Client-Code (Agent B8+) per Code-Review erzwingen.
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    misspell:
+      locale: US
+    staticcheck:
+      checks: ["all"]
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5
+  exclude-rules:
+    # errcheck in Testdateien für defer/Cleanup lockern
+    - path: "_test\\.go"
+      linters: [errcheck]
+      text: "Error return value of .* is not checked"

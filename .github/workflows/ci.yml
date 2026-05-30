@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: opensourcebackup
+          POSTGRES_PASSWORD: dev_password
+          POSTGRES_DB: opensourcebackup
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Install migrate
+        run: go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
+        run: migrate -path migrations -database "$DATABASE_URL" up
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Integration tests
+        env:
+          DATABASE_URL: postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
+        run: go test -tags=integration ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: golangci-lint (hard)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: --config .golangci.hard.yml
+
+  lint-warn:
+    name: Lint (warn)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: golangci-lint (warn — non-blocking)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: --config .golangci.warn.yml

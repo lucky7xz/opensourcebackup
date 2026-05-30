@@ -60,9 +60,8 @@ func TestListSystems_ReturnsEmptyArray_WhenNoSystems(t *testing.T) {
 
 func TestCreateSystem_Returns201_WithID(t *testing.T) {
 	mux := newMux(newTestHandler())
-	body := `{"Hostname":"web-01","RiskClass":"standard"}`
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(body)))
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"web-01","RiskClass":"standard"}`)))
 
 	if rec.Code != http.StatusCreated {
 		t.Errorf("want 201, got %d — body: %s", rec.Code, rec.Body.String())
@@ -91,13 +90,13 @@ func TestGetSystem_Returns200_WhenExists(t *testing.T) {
 
 	createRec := httptest.NewRecorder()
 	mux.ServeHTTP(createRec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"db-01","RiskClass":"critical"}`)))
-
 	var created catalog.System
-	json.NewDecoder(createRec.Body).Decode(&created)
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
 
 	getRec := httptest.NewRecorder()
 	mux.ServeHTTP(getRec, httptest.NewRequest("GET", "/v1/systems/"+created.ID.String(), nil))
-
 	if getRec.Code != http.StatusOK {
 		t.Errorf("want 200, got %d", getRec.Code)
 	}
@@ -119,7 +118,9 @@ func TestDeleteSystem_Returns204_WhenExists(t *testing.T) {
 	createRec := httptest.NewRecorder()
 	mux.ServeHTTP(createRec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"to-delete","RiskClass":"standard"}`)))
 	var created catalog.System
-	json.NewDecoder(createRec.Body).Decode(&created)
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
 
 	delRec := httptest.NewRecorder()
 	mux.ServeHTTP(delRec, httptest.NewRequest("DELETE", "/v1/systems/"+created.ID.String(), nil))
