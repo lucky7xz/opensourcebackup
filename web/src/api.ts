@@ -6,6 +6,16 @@ async function get<T>(path: string): Promise<T> {
   return res.json()
 }
 
+export async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status}`)
+  return res.json()
+}
+
 export interface System {
   ID: string; Hostname: string; OS?: string; AgentVersion?: string
   LastSeen?: string; RiskClass: string; Tags?: Record<string,string>; CreatedAt: string
@@ -26,16 +36,6 @@ export interface BackupJob {
 export interface Snapshot {
   ID: string; JobID: string; RepositoryID: string; EngineSnapshotID: string
   Hostname?: string; Paths?: string[]; ChecksumStatus: string; CreatedAt: string
-}
-
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`${res.status}`)
-  return res.json()
 }
 
 export const api = {

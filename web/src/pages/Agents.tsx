@@ -1,204 +1,345 @@
-import { useState } from 'react'
-import { SectionHeader } from '../components/Card'
-
-const AGENT_TYPES = [
-  { id:'server',    label:'Server Agent',     icon:'🖥',  desc:'Linux / Windows Server, file backup via Restic',     os:['linux-amd64','linux-arm64','windows-amd64'] },
-  { id:'endpoint',  label:'Windows Endpoint', icon:'🪟',  desc:'Windows workstations, MSI installer',                os:['windows-amd64'] },
-  { id:'firewall',  label:'Firewall Agent',   icon:'🔒',  desc:'OPNsense / pfSense — config and ruleset backup',      os:['linux-amd64'] },
-  { id:'vmhost',    label:'VM Host Agent',    icon:'🧮',  desc:'Proxmox / VMware / Hyper-V — VM config backup',       os:['linux-amd64'] },
-  { id:'database',  label:'Database Agent',   icon:'🗄',  desc:'PostgreSQL (pgBackRest), MySQL, MongoDB',             os:['linux-amd64','linux-arm64'] },
-  { id:'kubernetes',label:'Kubernetes',       icon:'☸',  desc:'Cluster backup via Velero — Helm chart deployment',   os:['helm'] },
-]
+import { useEffect, useState } from 'react'
+import { api, post, type System } from '../api'
 
 const VERSION = 'v0.1.0'
-const CP_URL  = 'http://localhost:8080'
+
+const PLATFORMS = [
+  { id: 'windows-amd64', label: 'Windows',      icon: '🪟', sub: 'Windows Server / Workstation (64-bit)' },
+  { id: 'linux-amd64',   label: 'Linux x64',    icon: '🐧', sub: 'Debian, Ubuntu, RHEL, CentOS (64-bit)' },
+  { id: 'linux-arm64',   label: 'Linux ARM64',  icon: '🐧', sub: 'Raspberry Pi, ARM servers' },
+]
+
+type Step = 'system' | 'platform' | 'config' | 'install'
 
 export function Agents() {
-  const [selected, setSelected] = useState<string|null>(null)
-  const [enrollCmd, setEnrollCmd] = useState<string|null>(null)
+  const [step,       setStep]       = useState<Step>('system')
+  const [systems,    setSystems]    = useState<System[]>([])
+  const [selSystem,  setSelSystem]  = useState<System|null>(null)
+  const [newHostname,setNewHostname]= useState('')
+  const [platform,   setPlatform]   = useState('')
+  const [resticRepo, setResticRepo] = useState('C:/tmp/backup-repo')
+  const [resticPass, setResticPass] = useState('')
+  const [pollSec,    setPollSec]    = useState('30')
+  const [token,      setToken]      = useState<string|null>(null)
+  const [loading,    setLoading]    = useState(false)
+  const [err,        setErr]        = useState<string|null>(null)
 
-  function generateEnrollCmd(_agentType: string, os: string) {
-    const token = 'YOUR_ENROLLMENT_TOKEN_HERE'
-    if (os === 'windows-amd64') {
-      setEnrollCmd(
-`# 1. Download agent (PowerShell)
-Invoke-WebRequest "${CP_URL}/downloads/agent/${VERSION}/windows-amd64" \`
+  useEffect(() => { api.systems().then(setSystems) }, [])
+
+  // ── Step helpers ───────────────────────────────────────────────────────────
+
+  async function goToPlatform() {
+    setErr(null); setLoading(true)
+    try {
+      let sys = selSystem
+      if (!sys && newHostname.trim()) {
+        const created = await post<System>('/v1/systems', { Hostname: newHostname.trim(), RiskClass: 'standard' })
+        sys = created
+        setSystems(prev => [...prev, created])
+        setSelSystem(created)
+      }
+      if (!sys) { setErr('Select an existing system or enter a hostname.'); return }
+      setSelSystem(sys)
+      setStep('platform')
+    } catch { setErr('Could not create system. Is the control plane running?') }
+    finally { setLoading(false) }
+  }
+
+  function goToConfig() {
+    if (!platform) { setErr('Select a platform.'); return }
+    setErr(null)
+    setResticRepo(platform === 'windows-amd64' ? 'C:/tmp/backup-repo' : '/tmp/backup-repo')
+    setStep('config')
+  }
+
+  async function goToInstall() {
+    if (!resticRepo.trim() || !resticPass.trim()) { setErr('Fill in repository path and password.'); return }
+    setErr(null); setLoading(true)
+    try {
+      const et = await api.createEnrollmentToken(selSystem!.ID)
+      setToken(et.token)
+      setStep('install')
+    } catch { setErr('Could not generate enrollment token.') }
+    finally { setLoading(false) }
+  }
+
+  // ── Install command ────────────────────────────────────────────────────────
+
+  const cpUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+
+  function installCmd() {
+    if (platform === 'windows-amd64') return (
+`# Paste these commands into PowerShell — one block:
+
+Invoke-WebRequest "${cpUrl}/downloads/agent/${VERSION}/windows-amd64" \`
   -OutFile opensourcebackup-agent.exe
 
-# 2. Set environment variables and run
-# The agent enrolls automatically on first start (token saved to data\\agent-token)
-$env:CONTROL_PLANE_URL  = "${CP_URL}"
+$env:CONTROL_PLANE_URL  = "${cpUrl}"
 $env:ENROLLMENT_TOKEN   = "${token}"
-$env:RESTIC_PASSWORD    = "YOUR_RESTIC_PASSWORD"
-$env:RESTIC_REPO        = "s3:your-bucket/backups/hostname"
-.\\opensourcebackup-agent.exe
+$env:RESTIC_PASSWORD    = "${resticPass}"
+$env:RESTIC_REPO        = "${resticRepo}"
+$env:AGENT_POLL_INTERVAL= "${pollSec}s"
+.\\opensourcebackup-agent.exe`)
+    return (
+`# Paste into your terminal:
 
-# 3. On subsequent starts (token already saved):
-$env:CONTROL_PLANE_URL  = "${CP_URL}"
-$env:RESTIC_PASSWORD    = "YOUR_RESTIC_PASSWORD"
-$env:RESTIC_REPO        = "s3:your-bucket/backups/hostname"
-.\\opensourcebackup-agent.exe`
-      )
-    } else if (os === 'helm') {
-      setEnrollCmd(
-`helm repo add opensourcebackup ${CP_URL}/helm
-helm install opensourcebackup-agent opensourcebackup/agent \\
-  --set controlPlane.url=${CP_URL} \\
-  --set enrollmentToken=${token}`
-      )
-    } else {
-      setEnrollCmd(
-`# 1. Download agent
-curl -fsSL "${CP_URL}/downloads/agent/${VERSION}/${os}" \\
+curl -fsSL "${cpUrl}/downloads/agent/${VERSION}/${platform}" \\
   -o /usr/local/bin/opensourcebackup-agent
 chmod +x /usr/local/bin/opensourcebackup-agent
 
-# 2. Create environment file
-mkdir -p /etc/opensourcebackup
-cat > /etc/opensourcebackup/agent.env << EOF
-CONTROL_PLANE_URL=${CP_URL}
-ENROLLMENT_TOKEN=${token}
-RESTIC_PASSWORD=YOUR_RESTIC_PASSWORD
-RESTIC_REPO=s3:your-bucket/backups/$(hostname)
-EOF
-chmod 600 /etc/opensourcebackup/agent.env
-
-# 3. First start — enrolls automatically (token saved to data/agent-token)
-opensourcebackup-agent
-
-# 4. Install as systemd service
-cat > /etc/systemd/system/opensourcebackup-agent.service << 'UNIT'
-[Unit]
-Description=OpenSourceBackup Agent
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/opensourcebackup-agent
-Restart=always
-EnvironmentFile=/etc/opensourcebackup/agent.env
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl enable --now opensourcebackup-agent`
-      )
-    }
+CONTROL_PLANE_URL="${cpUrl}" \\
+ENROLLMENT_TOKEN="${token}" \\
+RESTIC_PASSWORD="${resticPass}" \\
+RESTIC_REPO="${resticRepo}" \\
+AGENT_POLL_INTERVAL="${pollSec}s" \\
+/usr/local/bin/opensourcebackup-agent`)
   }
+
+  function reset() {
+    setStep('system'); setSelSystem(null); setNewHostname('')
+    setPlatform(''); setResticRepo(''); setResticPass('')
+    setToken(null); setErr(null)
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const steps: Step[] = ['system', 'platform', 'config', 'install']
+  const stepLabels = ['System', 'Platform', 'Configure', 'Install']
 
   return (
     <div style={s.page}>
-      <SectionHeader title="Agent Downloads & Deployment" />
-      <p style={s.intro}>
-        Select the agent type for your target system, generate an enrollment token,
-        and copy the install command.
-      </p>
+      <h1 style={s.h1}>Install Agent</h1>
+      <p style={s.sub}>Follow the steps to deploy the agent on a new system.</p>
 
-      <div style={s.notice}>
-        <strong>One binary, multiple profiles.</strong> All agent types use the same binary
-        configured via <code style={s.code}>--profile</code>. Build from source or download
-        a pre-built release.
+      {/* Progress bar */}
+      <div style={s.progress}>
+        {steps.map((st, i) => {
+          const done    = steps.indexOf(step) > i
+          const current = step === st
+          return (
+            <div key={st} style={s.progressStep}>
+              <div style={{
+                ...s.dot,
+                background: done ? 'var(--success)' : current ? 'var(--accent)' : 'var(--border)',
+                color: done || current ? '#fff' : 'var(--text-dim)',
+              }}>
+                {done ? '✓' : i+1}
+              </div>
+              <span style={{ fontSize:12, color: current ? 'var(--text)' : 'var(--text-dim)', fontWeight: current ? 600 : 400 }}>
+                {stepLabels[i]}
+              </span>
+              {i < steps.length-1 && <div style={s.line} />}
+            </div>
+          )
+        })}
       </div>
 
-      {/* Agent type grid */}
-      <div style={s.grid}>
-        {AGENT_TYPES.map(a => (
-          <div key={a.id}
-            onClick={() => { setSelected(selected===a.id?null:a.id); setEnrollCmd(null) }}
-            style={{...s.card, ...(selected===a.id?s.cardSelected:{})}}>
-            <div style={s.cardIcon}>{a.icon}</div>
-            <div style={s.cardTitle}>{a.label}</div>
-            <div style={s.cardDesc}>{a.desc}</div>
-            <div style={s.tags}>
-              {a.os.map(o => <span key={o} style={s.tag}>{o}</span>)}
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Step content */}
+      <div style={s.card}>
 
-      {/* Install commands panel */}
-      {selected && (()=>{
-        const agent = AGENT_TYPES.find(a=>a.id===selected)!
-        return (
-          <div style={s.panel}>
-            <h3 style={s.panelTitle}>Deploy {agent.label}</h3>
+        {/* ── Step 1: System ── */}
+        {step === 'system' && (
+          <>
+            <h2 style={s.stepTitle}>Which system should be backed up?</h2>
+            <p style={s.stepSub}>Select an existing system or register a new one.</p>
 
-            <div style={s.step}>
-              <div style={s.stepNum}>1</div>
-              <div>
-                <div style={s.stepTitle}>Register system in control plane</div>
-                <pre style={s.pre}>{`curl -X POST ${CP_URL}/v1/systems \\
-  -H "Content-Type: application/json" \\
-  -d '{"Hostname":"<your-hostname>","RiskClass":"standard"}'`}</pre>
-              </div>
-            </div>
-
-            <div style={s.step}>
-              <div style={s.stepNum}>2</div>
-              <div>
-                <div style={s.stepTitle}>Generate enrollment token (30 min TTL)</div>
-                <pre style={s.pre}>{`curl -X POST ${CP_URL}/v1/systems/<system-id>/enrollment-token`}</pre>
-              </div>
-            </div>
-
-            <div style={s.step}>
-              <div style={s.stepNum}>3</div>
-              <div>
-                <div style={s.stepTitle}>Choose platform and get install command</div>
-                <div style={s.osBtns}>
-                  {agent.os.map(o => (
-                    <button key={o} onClick={()=>generateEnrollCmd(selected,o)} style={s.osBtn}>
-                      {o}
-                    </button>
+            {systems.length > 0 && (
+              <div style={s.section}>
+                <label style={s.label}>Existing systems</label>
+                <div style={s.systemList}>
+                  {systems.map(sys => (
+                    <div key={sys.ID} onClick={() => { setSelSystem(sys); setNewHostname('') }}
+                      style={{...s.systemItem, ...(selSystem?.ID===sys.ID ? s.systemItemOn : {})}}>
+                      <span style={s.sysIcon}>🖥</span>
+                      <div>
+                        <div style={{fontWeight:600, color:'var(--text)'}}>{sys.Hostname}</div>
+                        <div style={{fontSize:11, color:'var(--text-dim)'}}>{sys.OS ?? 'unknown OS'} · {sys.RiskClass}</div>
+                      </div>
+                    </div>
                   ))}
                 </div>
-                {enrollCmd && <pre style={s.pre}>{enrollCmd}</pre>}
               </div>
+            )}
+
+            <div style={s.divider}>or register a new system</div>
+
+            <div style={s.section}>
+              <label style={s.label}>Hostname</label>
+              <input
+                style={s.input}
+                placeholder="e.g. web-server-01 or 192.168.1.10"
+                value={newHostname}
+                onChange={e => { setNewHostname(e.target.value); setSelSystem(null) }}
+              />
             </div>
 
-            <div style={s.version}>
-              Current version: <span style={{color:'var(--accent)'}}>{VERSION}</span>
-              {' — '}Build with: <code style={s.code}>go build -o opensourcebackup-agent ./cmd/agent</code>
+            {err && <div style={s.err}>{err}</div>}
+            <div style={s.actions}>
+              <button onClick={goToPlatform} disabled={loading || (!selSystem && !newHostname.trim())} style={s.primary}>
+                {loading ? 'Creating…' : 'Continue →'}
+              </button>
             </div>
-          </div>
-        )
-      })()}
+          </>
+        )}
 
-      {/* Agent Health placeholder */}
+        {/* ── Step 2: Platform ── */}
+        {step === 'platform' && (
+          <>
+            <h2 style={s.stepTitle}>What type of system is <em style={{color:'var(--accent)'}}>{selSystem?.Hostname}</em>?</h2>
+            <p style={s.stepSub}>Choose the operating system of the target machine.</p>
+
+            <div style={s.platformGrid}>
+              {PLATFORMS.map(p => (
+                <div key={p.id} onClick={() => setPlatform(p.id)}
+                  style={{...s.platformCard, ...(platform===p.id ? s.platformCardOn : {})}}>
+                  <div style={{fontSize:28, marginBottom:8}}>{p.icon}</div>
+                  <div style={{fontWeight:700, color:'var(--text)', marginBottom:4}}>{p.label}</div>
+                  <div style={{fontSize:12, color:'var(--text-muted)'}}>{p.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {err && <div style={s.err}>{err}</div>}
+            <div style={s.actions}>
+              <button onClick={() => setStep('system')} style={s.back}>← Back</button>
+              <button onClick={goToConfig} disabled={!platform} style={s.primary}>Continue →</button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 3: Config ── */}
+        {step === 'config' && (
+          <>
+            <h2 style={s.stepTitle}>Where should the backup be stored?</h2>
+            <p style={s.stepSub}>Configure the backup repository and encryption password.</p>
+
+            <div style={s.section}>
+              <label style={s.label}>Backup repository path or URL</label>
+              <input style={s.input} value={resticRepo} onChange={e => setResticRepo(e.target.value)}
+                placeholder={platform==='windows-amd64' ? 'C:/backups or s3:bucket/path' : '/var/backups or s3:bucket/path'} />
+              <div style={s.hint}>Restic supports: local path, s3:, sftp:, b2:, azure:, gs:</div>
+            </div>
+
+            <div style={s.section}>
+              <label style={s.label}>Encryption password</label>
+              <input style={s.input} type="password" value={resticPass}
+                onChange={e => setResticPass(e.target.value)}
+                placeholder="Strong password — store it safely, you need it for restores!" />
+              <div style={s.hint}>⚠ This password encrypts all backups. Keep it safe — without it, data cannot be restored.</div>
+            </div>
+
+            <div style={s.section}>
+              <label style={s.label}>Poll interval (seconds)</label>
+              <input style={{...s.input, width:100}} value={pollSec} onChange={e => setPollSec(e.target.value)} />
+              <div style={s.hint}>How often the agent checks for new backup jobs (default: 30s)</div>
+            </div>
+
+            {err && <div style={s.err}>{err}</div>}
+            <div style={s.actions}>
+              <button onClick={() => setStep('platform')} style={s.back}>← Back</button>
+              <button onClick={goToInstall} disabled={loading || !resticRepo.trim() || !resticPass.trim()} style={s.primary}>
+                {loading ? 'Generating token…' : 'Generate install command →'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 4: Install ── */}
+        {step === 'install' && token && (
+          <>
+            <h2 style={s.stepTitle}>Ready to install on <em style={{color:'var(--accent)'}}>{selSystem?.Hostname}</em></h2>
+            <p style={s.stepSub}>Copy the command below and run it on your target system. The token expires in 30 minutes.</p>
+
+            <div style={s.checklist}>
+              <div style={s.checkItem}><span style={s.checkIcon}>✓</span> System registered: <strong>{selSystem?.Hostname}</strong></div>
+              <div style={s.checkItem}><span style={s.checkIcon}>✓</span> Platform: <strong>{PLATFORMS.find(p=>p.id===platform)?.label}</strong></div>
+              <div style={s.checkItem}><span style={s.checkIcon}>✓</span> Repository: <strong style={{fontFamily:'var(--font-mono)', fontSize:12}}>{resticRepo}</strong></div>
+              <div style={s.checkItem}><span style={s.checkIcon}>✓</span> Enrollment token generated (30 min TTL)</div>
+            </div>
+
+            <div style={s.cmdBox}>
+              <div style={s.cmdHeader}>
+                <span style={{fontSize:12, color:'var(--text-muted)'}}>
+                  {platform === 'windows-amd64' ? 'PowerShell' : 'Terminal / bash'}
+                </span>
+                <button onClick={() => navigator.clipboard.writeText(installCmd())} style={s.copyBtn}>
+                  📋 Copy
+                </button>
+              </div>
+              <pre style={s.pre}>{installCmd()}</pre>
+            </div>
+
+            <div style={s.infoBox}>
+              The agent will enroll automatically on first run and save the token to <code style={s.code}>data/agent-token</code>.
+              On subsequent starts, only <code style={s.code}>CONTROL_PLANE_URL</code>, <code style={s.code}>RESTIC_PASSWORD</code> and <code style={s.code}>RESTIC_REPO</code> are needed.
+            </div>
+
+            <div style={s.actions}>
+              <button onClick={reset} style={s.back}>Install another agent</button>
+            </div>
+          </>
+        )}
+
+      </div>
+
+      {/* Connected agents */}
       <div style={{marginTop:32}}>
-        <SectionHeader title="Agent Health" />
-        <div style={s.healthCard}>
-          <p style={{color:'var(--text-muted)', fontSize:13}}>
-            Agent health monitoring (last seen, version, status) will be shown here
-            once agents are enrolled and connected.
-          </p>
+        <h2 style={s.sectionTitle}>Connected Systems ({systems.length})</h2>
+        <div style={s.agentGrid}>
+          {systems.map(sys => (
+            <div key={sys.ID} style={s.agentCard}>
+              <div style={{fontSize:20, marginBottom:8}}>🖥</div>
+              <div style={{fontWeight:600, color:'var(--text)', fontSize:13}}>{sys.Hostname}</div>
+              <div style={{fontSize:11, color:'var(--text-dim)', marginTop:2}}>{sys.OS ?? 'unknown OS'}</div>
+              <div style={{fontSize:11, color:'var(--text-dim)'}}>{sys.RiskClass}</div>
+            </div>
+          ))}
+          {systems.length === 0 && (
+            <div style={{color:'var(--text-dim)', fontSize:13}}>No systems yet. Use the wizard above to install your first agent.</div>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-const s: Record<string,React.CSSProperties> = {
-  page:         { padding:'28px 36px', maxWidth:1000 },
-  intro:        { color:'var(--text-muted)', fontSize:13, marginBottom:16 },
-  notice:       { background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:'var(--radius)', padding:'10px 16px', fontSize:13, color:'var(--text-muted)', marginBottom:20 },
-  code:         { fontFamily:'var(--font-mono)', fontSize:12, background:'rgba(0,0,0,0.3)', padding:'1px 5px', borderRadius:3 },
-  grid:         { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:20 },
-  card:         { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius)', padding:'16px', cursor:'pointer', transition:'all 0.12s' },
-  cardSelected: { borderColor:'var(--accent)', background:'var(--accent-dim)' },
-  cardIcon:     { fontSize:22, marginBottom:8 },
-  cardTitle:    { fontWeight:700, color:'var(--text)', fontSize:13, marginBottom:4 },
-  cardDesc:     { fontSize:12, color:'var(--text-muted)', lineHeight:1.5, marginBottom:8 },
-  tags:         { display:'flex', gap:5, flexWrap:'wrap' as const },
-  tag:          { background:'rgba(0,0,0,0.3)', color:'var(--text-dim)', padding:'1px 7px', borderRadius:4, fontSize:10, fontFamily:'var(--font-mono)' },
-  panel:        { background:'var(--bg-card)', border:'1px solid var(--accent)', borderRadius:'var(--radius)', padding:'20px 24px', marginTop:8 },
-  panelTitle:   { fontSize:16, fontWeight:700, color:'var(--text)', marginBottom:20 },
-  step:         { display:'flex', gap:14, marginBottom:20 },
-  stepNum:      { width:26, height:26, borderRadius:'50%', background:'var(--accent)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0 },
-  stepTitle:    { fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:8 },
-  pre:          { background:'#0a0d14', border:'1px solid var(--border)', borderRadius:6, padding:'12px 14px', fontSize:12, fontFamily:'var(--font-mono)', color:'#a8d8ea', overflow:'auto', whiteSpace:'pre', marginTop:8 },
-  osBtns:       { display:'flex', gap:8, marginBottom:8 },
-  osBtn:        { padding:'5px 12px', borderRadius:6, border:'1px solid var(--border)', background:'transparent', color:'var(--text-muted)', fontSize:12, cursor:'pointer', fontFamily:'var(--font-mono)' },
-  version:      { marginTop:16, fontSize:12, color:'var(--text-dim)', borderTop:'1px solid var(--border)', paddingTop:12 },
-  healthCard:   { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius)', padding:'20px 24px' },
+const s: Record<string, React.CSSProperties> = {
+  page:         { padding:'28px 36px', maxWidth:860 },
+  h1:           { fontSize:22, fontWeight:700, color:'var(--text)', marginBottom:4 },
+  sub:          { fontSize:13, color:'var(--text-muted)', marginBottom:28 },
+  progress:     { display:'flex', alignItems:'center', marginBottom:28 },
+  progressStep: { display:'flex', alignItems:'center', gap:8 },
+  dot:          { width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0 },
+  line:         { width:40, height:1, background:'var(--border)', margin:'0 4px' },
+  card:         { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:10, padding:'28px 32px' },
+  stepTitle:    { fontSize:18, fontWeight:700, color:'var(--text)', marginBottom:6 },
+  stepSub:      { fontSize:13, color:'var(--text-muted)', marginBottom:24 },
+  section:      { marginBottom:20 },
+  label:        { display:'block', fontSize:11, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:8 },
+  input:        { width:'100%', padding:'9px 12px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
+  hint:         { fontSize:11, color:'var(--text-dim)', marginTop:5 },
+  divider:      { textAlign:'center' as const, color:'var(--text-dim)', fontSize:12, margin:'16px 0', position:'relative' as const },
+  systemList:   { display:'flex', flexDirection:'column' as const, gap:8 },
+  systemItem:   { display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.12s' },
+  systemItemOn: { borderColor:'var(--accent)', background:'var(--accent-dim)' },
+  sysIcon:      { fontSize:20 },
+  platformGrid: { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:8 },
+  platformCard: { padding:'20px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', textAlign:'center' as const, transition:'all 0.12s' },
+  platformCardOn:{ borderColor:'var(--accent)', background:'var(--accent-dim)' },
+  err:          { background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.25)', borderRadius:6, padding:'8px 12px', fontSize:13, color:'var(--error)', marginBottom:12 },
+  actions:      { display:'flex', gap:8, justifyContent:'flex-end', marginTop:24, paddingTop:20, borderTop:'1px solid var(--border)' },
+  primary:      { padding:'9px 22px', borderRadius:6, background:'var(--accent)', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' },
+  back:         { padding:'9px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
+  checklist:    { background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px', marginBottom:16 },
+  checkItem:    { display:'flex', alignItems:'center', gap:8, fontSize:13, color:'var(--text-muted)', marginBottom:6 },
+  checkIcon:    { color:'var(--success)', fontWeight:700 },
+  cmdBox:       { background:'#0a0d14', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', marginBottom:14 },
+  cmdHeader:    { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 14px', borderBottom:'1px solid var(--border)', background:'rgba(255,255,255,0.03)' },
+  copyBtn:      { padding:'3px 10px', borderRadius:4, background:'var(--accent-dim)', color:'var(--accent)', border:'1px solid rgba(59,130,246,0.3)', fontSize:11, cursor:'pointer' },
+  pre:          { padding:'16px', fontSize:12, fontFamily:'var(--font-mono)', color:'#a8d8ea', overflow:'auto', whiteSpace:'pre', margin:0, lineHeight:1.7 },
+  infoBox:      { background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'var(--text-muted)', lineHeight:1.7 },
+  code:         { fontFamily:'var(--font-mono)', fontSize:11, background:'rgba(0,0,0,0.3)', padding:'1px 5px', borderRadius:3 },
+  sectionTitle: { fontSize:14, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:14 },
+  agentGrid:    { display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 },
+  agentCard:    { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:8, padding:'16px', textAlign:'center' as const },
 }
