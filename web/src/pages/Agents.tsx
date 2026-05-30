@@ -274,6 +274,62 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
               On subsequent starts, only <code style={s.code}>CONTROL_PLANE_URL</code>, <code style={s.code}>RESTIC_PASSWORD</code> and <code style={s.code}>RESTIC_REPO</code> are needed.
             </div>
 
+            {/* Stop / Start / Restart commands */}
+            <h3 style={s.cmdSectionTitle}>Stop / Start / Restart</h3>
+
+            {platform === 'windows-amd64' ? (
+              <>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Stop</span>
+                  <pre style={s.cmdLine}>Stop-Process -Name "opensourcebackup-agent" -Force</pre>
+                  <button onClick={() => navigator.clipboard.writeText('Stop-Process -Name "opensourcebackup-agent" -Force')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Start</span>
+                  <pre style={s.cmdLine}>{`$env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`}</pre>
+                  <button onClick={() => navigator.clipboard.writeText(`$env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`)} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Restart</span>
+                  <pre style={s.cmdLine}>{`Stop-Process -Name "opensourcebackup-agent" -Force -ErrorAction SilentlyContinue; Start-Sleep 1; $env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`}</pre>
+                  <button onClick={() => navigator.clipboard.writeText(`Stop-Process -Name "opensourcebackup-agent" -Force -ErrorAction SilentlyContinue; Start-Sleep 1; $env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`)} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Status</span>
+                  <pre style={s.cmdLine}>Get-Process -Name "opensourcebackup-agent" -ErrorAction SilentlyContinue</pre>
+                  <button onClick={() => navigator.clipboard.writeText('Get-Process -Name "opensourcebackup-agent" -ErrorAction SilentlyContinue')} style={s.copySmall}>📋</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Stop</span>
+                  <pre style={s.cmdLine}>systemctl stop opensourcebackup-agent</pre>
+                  <button onClick={() => navigator.clipboard.writeText('systemctl stop opensourcebackup-agent')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Start</span>
+                  <pre style={s.cmdLine}>systemctl start opensourcebackup-agent</pre>
+                  <button onClick={() => navigator.clipboard.writeText('systemctl start opensourcebackup-agent')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Restart</span>
+                  <pre style={s.cmdLine}>systemctl restart opensourcebackup-agent</pre>
+                  <button onClick={() => navigator.clipboard.writeText('systemctl restart opensourcebackup-agent')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Status</span>
+                  <pre style={s.cmdLine}>systemctl status opensourcebackup-agent</pre>
+                  <button onClick={() => navigator.clipboard.writeText('systemctl status opensourcebackup-agent')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Logs</span>
+                  <pre style={s.cmdLine}>journalctl -u opensourcebackup-agent -f</pre>
+                  <button onClick={() => navigator.clipboard.writeText('journalctl -u opensourcebackup-agent -f')} style={s.copySmall}>📋</button>
+                </div>
+              </>
+            )}
+
             <div style={s.actions}>
               <button onClick={reset} style={s.back}>Install another agent</button>
             </div>
@@ -338,6 +394,11 @@ const s: Record<string, React.CSSProperties> = {
   copyBtn:      { padding:'3px 10px', borderRadius:4, background:'var(--accent-dim)', color:'var(--accent)', border:'1px solid rgba(59,130,246,0.3)', fontSize:11, cursor:'pointer' },
   pre:          { padding:'16px', fontSize:12, fontFamily:'var(--font-mono)', color:'#a8d8ea', overflow:'auto', whiteSpace:'pre', margin:0, lineHeight:1.7 },
   infoBox:      { background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'var(--text-muted)', lineHeight:1.7 },
+  cmdSectionTitle: { fontSize:12, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase' as const, letterSpacing:'0.08em', margin:'20px 0 10px' },
+  cmdRow:       { display:'flex', alignItems:'center', gap:8, marginBottom:6, background:'#0a0d14', borderRadius:6, padding:'6px 10px' },
+  cmdLabel:     { fontSize:10, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase' as const, letterSpacing:'0.06em', width:52, flexShrink:0 },
+  cmdLine:      { flex:1, fontFamily:'var(--font-mono)', fontSize:11, color:'#a8d8ea', overflow:'auto', whiteSpace:'nowrap' as const, margin:0, padding:0, background:'none' },
+  copySmall:    { padding:'2px 8px', borderRadius:4, background:'var(--accent-dim)', color:'var(--accent)', border:'none', fontSize:11, cursor:'pointer', flexShrink:0 },
   code:         { fontFamily:'var(--font-mono)', fontSize:11, background:'rgba(0,0,0,0.3)', padding:'1px 5px', borderRadius:3 },
   sectionTitle: { fontSize:14, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:14 },
   agentGrid:    { display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 },
