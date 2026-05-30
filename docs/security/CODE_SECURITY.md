@@ -4,6 +4,7 @@
 > Wird bei jedem Feature das Auth, API, Input, Secrets, Deps, Restore oder Container berührt geprüft.
 >
 > Verwandte Dokumente:
+> - [APP_SECURITY.md](APP_SECURITY.md) — Web, Mobile, Desktop: Token-Speicherung, CSRF, CSP, Keychain
 > - [Lint-Strategie](../quality/lint-strategy.md) — gosec wandert in Schicht 1 sobald Auth steht
 > - [Clean Code & Wertesystem](../developer-guide/CLEAN_CODE.md) — Korrektheit als Grundwert
 > - [Architektur](../architecture/ARCHITECTURE.md) — mTLS, RBAC, Vault/SOPS
