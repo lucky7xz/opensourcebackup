@@ -38,9 +38,15 @@ export interface Snapshot {
   Hostname?: string; Paths?: string[]; ChecksumStatus: string; CreatedAt: string
 }
 
+async function del(path: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok && res.status !== 204) throw new Error(`${res.status}`)
+}
+
 export const api = {
-  health:       () => get<{status:string}>('/health'),
-  systems:      () => get<System[]>('/v1/systems'),
+  health:        () => get<{status:string}>('/health'),
+  systems:       () => get<System[]>('/v1/systems'),
+  deleteSystem:  (id: string) => del(`/v1/systems/${id}`),
   repositories: () => get<BackupRepository[]>('/v1/repositories'),
   policies:     () => get<BackupPolicy[]>('/v1/policies'),
   jobs:         () => get<BackupJob[]>('/v1/jobs'),

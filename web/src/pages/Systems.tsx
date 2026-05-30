@@ -4,6 +4,7 @@ import { Card, SectionHeader } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
 import { Modal } from '../components/Modal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 function systemStatus(s: System, jobs: BackupJob[]): string {
   const last = jobs.filter(j => j.SystemID===s.ID).sort((a,b) => new Date(b.CreatedAt).getTime()-new Date(a.CreatedAt).getTime())[0]
@@ -16,16 +17,31 @@ export function Systems() {
   const [jobs,     setJobs]     = useState<BackupJob[]>([])
   const [policies, setPolicies] = useState<BackupPolicy[]>([])
   const [loading,  setLoading]  = useState(true)
-  const [runFor,   setRunFor]   = useState<System|null>(null)
-  const [selPolicy, setSelPolicy] = useState('')
-  const [creating, setCreating]  = useState(false)
-  const [msg,      setMsg]       = useState<string|null>(null)
+  const [runFor,     setRunFor]     = useState<System|null>(null)
+  const [deleteFor,  setDeleteFor]  = useState<System|null>(null)
+  const [selPolicy,  setSelPolicy]  = useState('')
+  const [creating,   setCreating]   = useState(false)
+  const [deleting,   setDeleting]   = useState(false)
+  const [msg,        setMsg]        = useState<string|null>(null)
 
   const load = () => Promise.all([api.systems(), api.jobs(), api.policies()])
     .then(([s,j,p]) => { setSystems(s); setJobs(j); setPolicies(p) })
     .finally(() => setLoading(false))
 
   useEffect(() => { load() }, [])
+
+  async function deleteSystem() {
+    if (!deleteFor) return
+    setDeleting(true)
+    try {
+      await api.deleteSystem(deleteFor.ID)
+      setMsg(`${deleteFor.Hostname} removed.`)
+      setDeleteFor(null)
+      await load()
+    } catch {
+      setMsg('Failed to delete system.')
+    } finally { setDeleting(false) }
+  }
 
   async function runBackup() {
     if (!runFor || !selPolicy) return
@@ -60,16 +76,28 @@ export function Systems() {
               }},
               { header:'Restore Tested', render:_=><span style={{color:'var(--text-dim)',fontSize:12}}>not tested</span> },
               { header:'',               render:sys=>(
-                <button onClick={() => { setRunFor(sys); setSelPolicy('') }} style={s.runBtn}>
-                  ▶ Run Backup
-                </button>
-              ), width:'120px' },
+                <div style={{display:'flex',gap:6}}>
+                  <button onClick={() => { setRunFor(sys); setSelPolicy('') }} style={s.runBtn}>▶ Run</button>
+                  <button onClick={() => setDeleteFor(sys)} style={s.delBtn}>🗑</button>
+                </div>
+              ), width:'110px' },
             ]}
             rows={systems} keyFn={sys=>sys.ID}
             empty="No systems registered. Install the agent to get started."
           />
         )}
       </Card>
+
+      {deleteFor && (
+        <ConfirmDialog
+          title={`Remove ${deleteFor.Hostname}?`}
+          message={`This will delete the system record and revoke all agent tokens for ${deleteFor.Hostname}. The agent process itself will stop authenticating on the next poll. This cannot be undone.`}
+          confirmLabel={deleting ? 'Removing…' : 'Remove Agent'}
+          danger
+          onConfirm={deleteSystem}
+          onCancel={() => setDeleteFor(null)}
+        />
+      )}
 
       {runFor && (
         <Modal title={`Run Backup — ${runFor.Hostname}`} onClose={() => setRunFor(null)}>
@@ -101,6 +129,7 @@ const s: Record<string,React.CSSProperties> = {
   load:      { padding:40, color:'var(--text-muted)', textAlign:'center' },
   name:      { fontWeight:600, color:'var(--text)' },
   runBtn:    { padding:'4px 10px', borderRadius:5, background:'var(--accent-dim)', color:'var(--accent)', border:'1px solid rgba(59,130,246,0.3)', fontSize:11, fontWeight:600, cursor:'pointer' },
+  delBtn:    { padding:'4px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
   msgBox:    { background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.3)', borderRadius:6, padding:'8px 14px', fontSize:13, color:'var(--success)', marginBottom:12, cursor:'pointer' },
   field:     { marginBottom:16 },
   label:     { display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:6 },

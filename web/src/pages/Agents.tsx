@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, post, type System } from '../api'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const VERSION = 'v0.1.0'
 
@@ -23,6 +24,7 @@ export function Agents() {
   const [token,      setToken]      = useState<string|null>(null)
   const [loading,    setLoading]    = useState(false)
   const [err,        setErr]        = useState<string|null>(null)
+  const [deleteFor,  setDeleteFor]  = useState<System|null>(null)
 
   useEffect(() => { api.systems().then(setSystems) }, [])
 
@@ -347,7 +349,8 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
               <div style={{fontSize:20, marginBottom:8}}>🖥</div>
               <div style={{fontWeight:600, color:'var(--text)', fontSize:13}}>{sys.Hostname}</div>
               <div style={{fontSize:11, color:'var(--text-dim)', marginTop:2}}>{sys.OS ?? 'unknown OS'}</div>
-              <div style={{fontSize:11, color:'var(--text-dim)'}}>{sys.RiskClass}</div>
+              <div style={{fontSize:11, color:'var(--text-dim)', marginBottom:10}}>{sys.RiskClass}</div>
+              <button onClick={() => setDeleteFor(sys)} style={s.agentDelBtn}>🗑 Remove</button>
             </div>
           ))}
           {systems.length === 0 && (
@@ -355,6 +358,21 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
           )}
         </div>
       </div>
+
+      {deleteFor && (
+        <ConfirmDialog
+          title={`Remove ${deleteFor.Hostname}?`}
+          message={`This will delete the system record and revoke all agent tokens for ${deleteFor.Hostname}. The running agent will stop authenticating on the next poll (within 30s). This cannot be undone.`}
+          confirmLabel="Remove Agent"
+          danger
+          onConfirm={async () => {
+            await api.deleteSystem(deleteFor.ID)
+            setDeleteFor(null)
+            setSystems(prev => prev.filter(s => s.ID !== deleteFor.ID))
+          }}
+          onCancel={() => setDeleteFor(null)}
+        />
+      )}
     </div>
   )
 }
@@ -402,5 +420,6 @@ const s: Record<string, React.CSSProperties> = {
   code:         { fontFamily:'var(--font-mono)', fontSize:11, background:'rgba(0,0,0,0.3)', padding:'1px 5px', borderRadius:3 },
   sectionTitle: { fontSize:14, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:14 },
   agentGrid:    { display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 },
-  agentCard:    { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:8, padding:'16px', textAlign:'center' as const },
+  agentCard:    { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:8, padding:'16px', textAlign:'center' as const, display:'flex', flexDirection:'column' as const, alignItems:'center' },
+  agentDelBtn:  { padding:'4px 12px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:11, cursor:'pointer', width:'100%' },
 }
