@@ -71,8 +71,14 @@ func main() {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
+	corsOrigin := os.Getenv("CORS_ORIGIN")
+	if corsOrigin == "" {
+		corsOrigin = "http://localhost:5173"
+	}
+
 	httpHandler := api.Chain(mux,
 		api.Recovery(logger),
+		api.CORS(corsOrigin),
 		api.SecurityHeaders,
 		api.RequestBodyLimit(maxRequestBodyBytes),
 		api.Logging(logger),

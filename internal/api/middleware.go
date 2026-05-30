@@ -61,6 +61,23 @@ func Timeout(d time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
+// CORS allows cross-origin requests from the configured origin.
+// In development this permits the Vite dev server (localhost:5173) to call the API.
+func CORS(allowedOrigin string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // SecurityHeaders sets hardened HTTP response headers on every response.
 // Note: Strict-Transport-Security is included but only takes effect over TLS.
 func SecurityHeaders(next http.Handler) http.Handler {

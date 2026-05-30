@@ -1,0 +1,24 @@
+:root {
+  --bg-primary: #080c14;
+  --bg-card: #141824;
+  --bg-sidebar: #0d1220;
+  --accent-cyan: #00d4ff;
+  --accent-green: #00ff88;
+  --accent-orange: #ff9500;
+  --accent-red: #ff4757;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --border: #1e2a3a;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+a { color: var(--accent-cyan); text-decoration: none; }
