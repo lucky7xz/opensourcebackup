@@ -310,6 +310,26 @@ Folgende Fragen stellt jeder Reviewer:
 
 ---
 
+## Code-Sicherheit
+
+**Pflicht:** Jedes Feature das Auth, API, Input, Secrets, Deps oder Container berührt wird gegen die
+[Code Security Checkliste](../security/CODE_SECURITY.md) geprüft — vor dem Commit, nicht danach.
+
+Kurzreferenz der kritischen Regeln:
+
+| Regel | Status |
+|---|---|
+| Keine Credentials im Code — nur `os.Getenv` | ✅ |
+| SQL nur mit parametrisierten Queries | ✅ |
+| Externe Fehler nicht ungefiltert nach außen | ✅ |
+| Input-Validierung im Backend (Whitelist, Längen) | 🔧 |
+| TLS / HTTPS vor Produktion | ❌ B9 |
+| Auth / JWT / mTLS vor Produktion | ❌ B9 |
+| Rate Limiting vor Produktion | ❌ |
+| Security Headers | ❌ |
+
+---
+
 ## Static Code Analysis — Lint-Strategie
 
 **Wert: Korrektheit, Kontinuierliche Verbesserung**
