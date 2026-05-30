@@ -312,21 +312,27 @@ Folgende Fragen stellt jeder Reviewer:
 
 ## Code-Sicherheit
 
-**Pflicht:** Jedes Feature das Auth, API, Input, Secrets, Deps oder Container berührt wird gegen die
-[Code Security Checkliste](../security/CODE_SECURITY.md) geprüft — vor dem Commit, nicht danach.
+**Pflicht:** Jedes Feature das Auth, API, Input, Secrets, Deps, Restore oder Container berührt wird gegen
+[CODE_SECURITY.md](../security/CODE_SECURITY.md) geprüft — vor dem Commit, nicht danach.
 
-Kurzreferenz der kritischen Regeln:
+Kurzreferenz kritischer Regeln:
 
-| Regel | Status |
-|---|---|
-| Keine Credentials im Code — nur `os.Getenv` | ✅ |
-| SQL nur mit parametrisierten Queries | ✅ |
-| Externe Fehler nicht ungefiltert nach außen | ✅ |
-| Input-Validierung im Backend (Whitelist, Längen) | 🔧 |
-| TLS / HTTPS vor Produktion | ❌ B9 |
-| Auth / JWT / mTLS vor Produktion | ❌ B9 |
-| Rate Limiting vor Produktion | ❌ |
-| Security Headers | ❌ |
+| Regel | Status | Block |
+|---|---|---|
+| Keine Credentials im Code — nur `os.Getenv` | ✅ | — |
+| SQL nur parametrisiert | ✅ | — |
+| Externe Fehler nicht ungefiltert nach außen | ✅ | — |
+| Security Headers Middleware | ❌ | B7 |
+| Request-Body-Limit + ReadHeaderTimeout | 🔧 | B7 |
+| Input-Validierung (Whitelist, Längen, Pagination) | 🔧 | B8 |
+| TLS / HTTPS | ❌ | Produktion |
+| Auth / JWT / mTLS | ❌ | B9 |
+| Agent-Enrollment (OTP-Token, Zertifikat, Revocation) | 📋 | B9 |
+| Rate Limiting | ❌ | B9 |
+| Pfad-Validierung bei Restore (Path Traversal) | 📋 | B13 |
+| Audit-Logging (append-only) | 🔧 | B9+ |
+| govulncheck in CI | 🔧 | — |
+| gosec Schicht 1 | 📋 | nach B9 |
 
 ---
 
