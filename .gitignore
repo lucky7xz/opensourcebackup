@@ -30,3 +30,7 @@ dist/
 
 # Interne Sicherheitsdokumentation — nicht öffentlich
 docs/security/
+
+# Internes Entwicklungstagbuch — nicht öffentlich
+docs/dev_journal.md
+docs/dev_journal.html
