@@ -16,6 +16,7 @@ type JobStore interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*BackupJob, error)
 	List(ctx context.Context) ([]BackupJob, error)
 	ListBySystemID(ctx context.Context, systemID uuid.UUID) ([]BackupJob, error)
+	LatestByPolicyID(ctx context.Context, policyID uuid.UUID) (*BackupJob, error)
 	Update(ctx context.Context, j *BackupJob) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -81,6 +82,20 @@ func (s *pgJobStore) ListBySystemID(ctx context.Context, systemID uuid.UUID) ([]
 		FROM backup_jobs WHERE system_id = $1 ORDER BY created_at DESC`,
 		pgtype.UUID{Bytes: systemID, Valid: true},
 	)
+}
+
+func (s *pgJobStore) LatestByPolicyID(ctx context.Context, policyID uuid.UUID) (*BackupJob, error) {
+	row := s.db.pool.QueryRow(ctx, `
+		SELECT id, system_id, policy_id, started_at, finished_at, status,
+		       bytes_scanned, bytes_uploaded, error_summary, raw_output, created_at
+		FROM backup_jobs WHERE policy_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		pgtype.UUID{Bytes: policyID, Valid: true},
+	)
+	j, err := scanJob(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return j, err
 }
 
 func (s *pgJobStore) Update(ctx context.Context, j *BackupJob) error {

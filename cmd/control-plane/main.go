@@ -11,6 +11,7 @@ import (
 
 	"github.com/cerberus8484/opensourcebackup/internal/api"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	"github.com/cerberus8484/opensourcebackup/internal/scheduler"
 )
 
 func main() {
@@ -42,6 +43,17 @@ func main() {
 		catalog.NewSnapshotStore(db),
 		logger,
 	)
+
+	sched := scheduler.New(
+		catalog.NewPolicyStore(db),
+		catalog.NewJobStore(db),
+		logger,
+	)
+	go func() {
+		if err := sched.Start(ctx); err != nil {
+			logger.Error("scheduler error", "error", err)
+		}
+	}()
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
