@@ -1,0 +1,59 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+
+	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+)
+
+// Handler holds all store dependencies for the HTTP API.
+type Handler struct {
+	systems      catalog.SystemStore
+	repositories catalog.RepositoryStore
+	policies     catalog.PolicyStore
+	log          *slog.Logger
+}
+
+// New creates a Handler wired to the given stores.
+func New(
+	systems catalog.SystemStore,
+	repositories catalog.RepositoryStore,
+	policies catalog.PolicyStore,
+	log *slog.Logger,
+) *Handler {
+	return &Handler{
+		systems:      systems,
+		repositories: repositories,
+		policies:     policies,
+		log:          log,
+	}
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, code int, msg string) {
+	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+func decode(r *http.Request, v any) error {
+	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// httpStatusForError maps catalog errors to HTTP status codes.
+func httpStatusForError(err error) int {
+	switch {
+	case errors.Is(err, catalog.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, catalog.ErrConflict):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}

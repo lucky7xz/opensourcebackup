@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cerberus8484/opensourcebackup/internal/api"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
@@ -33,15 +34,15 @@ func main() {
 
 	logger.Info("database connected")
 
+	handler := api.New(
+		catalog.NewSystemStore(db),
+		catalog.NewRepositoryStore(db),
+		catalog.NewPolicyStore(db),
+		logger,
+	)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		if err := db.Ping(r.Context()); err != nil {
-			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	handler.RegisterRoutes(mux)
 
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
