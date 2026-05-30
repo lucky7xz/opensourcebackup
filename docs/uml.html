@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UML Diagramme — OpensourceBackup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg-primary:#080c14;--bg-card:#141824;--bg-sidebar:#0d1220;--accent-cyan:#00d4ff;--accent-green:#00ff88;--text-primary:#e2e8f0;--text-secondary:#94a3b8;--border:#1e2a3a;--font-mono:'JetBrains Mono',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',sans-serif;display:flex;min-height:100vh}
+.sidebar{width:260px;min-width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border);padding:24px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-title{padding:0 20px 16px;font-size:13px;font-weight:700;color:var(--accent-cyan);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);margin-bottom:12px}
+.sidebar a{display:block;padding:7px 20px;color:var(--text-secondary);text-decoration:none;font-size:13px;transition:all .15s;border-left:2px solid transparent}
+.sidebar a:hover,.sidebar a.active{color:var(--accent-cyan);border-left-color:var(--accent-cyan);background:rgba(0,212,255,.05)}
+.content{flex:1;padding:48px 56px;max-width:960px}
+h1{font-size:28px;font-weight:700;color:var(--accent-cyan);margin-bottom:8px}
+h1 .sub{font-size:14px;color:var(--text-secondary);font-weight:400}
+h2{font-size:20px;font-weight:600;color:var(--accent-cyan);margin:40px 0 16px;padding-top:8px;border-top:1px solid var(--border)}
+h3{font-size:15px;font-weight:600;color:var(--accent-green);margin:20px 0 10px}
+p{color:var(--text-secondary);line-height:1.7;margin-bottom:12px}
+.diagram-box{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:24px;margin:16px 0;overflow-x:auto}
+.mermaid{text-align:center}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+  <div class="sidebar-title">UML — OpensourceBackup</div>
+  <a href="#komponenten">1. Komponentendiagramm</a>
+  <a href="#models">2. Klassendiagramm Models</a>
+  <a href="#interfaces">3. Store Interfaces</a>
+  <a href="#api-seq">4. API Request Sequence</a>
+  <a href="#sched-seq">5. Scheduler Sequence</a>
+  <a href="#deploy-dev">6. Deployment Entwicklung</a>
+  <a href="#deploy-prod">7. Deployment Produktion</a>
+</nav>
+<main class="content">
+  <h1>UML Diagramme<br><span class="sub">OpensourceBackup — Stand B1–B7</span></h1>
+
+  <h2 id="komponenten">1. Komponentendiagramm — Gesamtsystem</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+graph TB
+    subgraph Client
+        WEB[Web-GUI\nReact/TypeScript]
+        AGENT[Backup-Agent\nGo Binary]
+    end
+    subgraph ControlPlane["Control Plane (Go)"]
+        MW[Middleware\nRecovery · Headers · Limit · Logging · Timeout]
+        API[REST API\n/v1/systems · /v1/jobs · /v1/policies\n/v1/repositories · /v1/snapshots]
+        SCHED[Scheduler\nCron + Dead-Man's Switch]
+        CATALOG[Catalog Layer\nSystemStore · JobStore · PolicyStore\nRepositoryStore · SnapshotStore]
+    end
+    subgraph Storage
+        PG[(PostgreSQL 16\nCatalog DB)]
+        REDIS[(Redis\nMessage Queue)]
+    end
+    subgraph BackupEngines["Backup Engines"]
+        RESTIC[Restic]
+        BORG[Borg]
+        PGBR[pgBackRest]
+        VELERO[Velero]
+    end
+    WEB -->|HTTPS REST| MW
+    AGENT -->|HTTPS mTLS| MW
+    MW --> API
+    API --> CATALOG
+    SCHED --> CATALOG
+    CATALOG --> PG
+    SCHED --> REDIS
+    AGENT --> RESTIC
+    AGENT --> BORG
+    AGENT --> PGBR
+    AGENT --> VELERO
+    </div>
+  </div>
+
+  <h2 id="models">2. Klassendiagramm — Catalog Models</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+classDiagram
+    class System {
+        +UUID ID
+        +string Hostname
+        +string OS
+        +string AgentVersion
+        +time.Time LastSeen
+        +map Tags
+        +string RiskClass
+        +time.Time CreatedAt
+    }
+    class BackupRepository {
+        +UUID ID
+        +string Type
+        +string Location
+        +string EncryptionMode
+        +bool ObjectLockEnabled
+        +UUID RetentionPolicyID
+        +time.Time CreatedAt
+    }
+    class BackupPolicy {
+        +UUID ID
+        +string Name
+        +string Engine
+        +string Schedule
+        +map Retention
+        +time.Time CreatedAt
+    }
+    class BackupJob {
+        +UUID ID
+        +UUID SystemID
+        +UUID PolicyID
+        +string Status
+        +int64 BytesUploaded
+        +time.Time CreatedAt
+    }
+    class Snapshot {
+        +UUID ID
+        +UUID JobID
+        +string EngineSnapshotID
+        +UUID RepositoryID
+        +string ChecksumStatus
+        +time.Time CreatedAt
+    }
+    System "1" --> "0..*" BackupJob : has
+    BackupPolicy "1" --> "0..*" BackupJob : triggers
+    BackupJob "1" --> "0..*" Snapshot : produces
+    BackupRepository "1" --> "0..*" Snapshot : stores
+    </div>
+  </div>
+
+  <h2 id="interfaces">3. Klassendiagramm — Store Interfaces (DIP)</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+classDiagram
+    class SystemStore {
+        <<interface>>
+        +Create(ctx, System) error
+        +GetByID(ctx, UUID) System
+        +List(ctx) []System
+        +Update(ctx, System) error
+        +Delete(ctx, UUID) error
+    }
+    class JobStore {
+        <<interface>>
+        +Create(ctx, BackupJob) error
+        +GetByID(ctx, UUID) BackupJob
+        +List(ctx) []BackupJob
+        +ListBySystemID(ctx, UUID) []BackupJob
+        +LatestByPolicyID(ctx, UUID) BackupJob
+        +Update(ctx, BackupJob) error
+        +Delete(ctx, UUID) error
+    }
+    class pgSystemStore {
+        -db DB
+    }
+    class Handler {
+        -systems SystemStore
+        -jobs JobStore
+        -policies PolicyStore
+        -log Logger
+    }
+    class Scheduler {
+        -policies PolicyStore
+        -jobs JobStore
+        -cron Cron
+        +Start(ctx) error
+    }
+    SystemStore <|.. pgSystemStore : implements
+    Handler --> SystemStore : depends on
+    Handler --> JobStore : depends on
+    Scheduler --> JobStore : depends on
+    </div>
+  </div>
+
+  <h2 id="api-seq">4. Sequenzdiagramm — API Request</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant REC as Recovery
+    participant SEC as SecurityHeaders
+    participant LIM as BodyLimit
+    participant LOG as Logging
+    participant TO as Timeout
+    participant H as Handler
+    participant S as Store
+    participant DB as PostgreSQL
+    C->>REC: HTTP Request
+    REC->>SEC: next
+    SEC->>SEC: Set 6 Security Headers
+    SEC->>LIM: next
+    LIM->>LIM: MaxBytesReader(1MB)
+    LIM->>LOG: next
+    LOG->>TO: next
+    TO->>H: next
+    H->>S: Store.Method(ctx, id)
+    S->>DB: SELECT/INSERT/UPDATE
+    DB-->>S: Result
+    S-->>H: Model / Error
+    H-->>LOG: Response
+    LOG->>LOG: log method/path/status/ms
+    LOG-->>C: Response + Security Headers
+    </div>
+  </div>
+
+  <h2 id="sched-seq">5. Sequenzdiagramm — Scheduler</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+sequenceDiagram
+    participant CR as Cron
+    participant SC as Scheduler
+    participant JS as JobStore
+    participant DB as PostgreSQL
+    participant TK as Ticker 5min
+    Note over CR: Policy-Schedule auslösen
+    CR->>SC: dispatchJob(policy)
+    SC->>JS: Create(BackupJob pending)
+    JS->>DB: INSERT INTO backup_jobs
+    DB-->>SC: job.ID gesetzt
+    Note over TK: Alle 5 Minuten
+    TK->>SC: checkDeadMan()
+    loop jede scheduled Policy
+        SC->>SC: cronInterval(schedule)
+        SC->>JS: LatestByPolicyID()
+        JS->>DB: SELECT ORDER BY created_at DESC LIMIT 1
+        DB-->>SC: BackupJob
+        alt überfällig
+            SC->>SC: slog.Warn dead-man overdue
+        end
+    end
+    </div>
+  </div>
+
+  <h2 id="deploy-dev">6. Deploymentdiagramm — Entwicklung</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+graph LR
+    subgraph Dev["Entwickler-Maschine"]
+        CP[control-plane :8080]
+        PG[(PostgreSQL :5432)]
+        RD[(Redis :6379)]
+    end
+    CP -->|pgx/v5| PG
+    CP -->|redis| RD
+    DEV["make dev-up\nmake migrate-up\nmake run"] --> Dev
+    </div>
+  </div>
+
+  <h2 id="deploy-prod">7. Deploymentdiagramm — Produktion (Ziel)</h2>
+  <div class="diagram-box">
+    <div class="mermaid">
+graph TB
+    subgraph Internet
+        CLI[Agent / Web-GUI]
+    end
+    subgraph K8s["Kubernetes Cluster"]
+        ING[Ingress TLS 1.3]
+        CP1[control-plane Pod 1]
+        CP2[control-plane Pod 2]
+        PG[(PostgreSQL StatefulSet)]
+        RD[(Redis)]
+        PROM[Prometheus + Grafana]
+    end
+    subgraph Agents["Zielsysteme"]
+        A1[Agent 1]
+        A2[Agent 2]
+    end
+    CLI -->|HTTPS| ING
+    A1 -->|mTLS| ING
+    A2 -->|mTLS| ING
+    ING --> CP1
+    ING --> CP2
+    CP1 --> PG
+    CP2 --> PG
+    PROM -.->|scrape| CP1
+    PROM -.->|scrape| CP2
+    </div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#141824',
+    primaryTextColor: '#e2e8f0',
+    primaryBorderColor: '#1e2a3a',
+    lineColor: '#00d4ff',
+    secondaryColor: '#0d1220',
+    tertiaryColor: '#080c14',
+    edgeLabelBackground: '#141824',
+    clusterBkg: '#0d1220',
+    titleColor: '#00d4ff'
+  }
+});
+const links = document.querySelectorAll('.sidebar a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      links.forEach(l => l.classList.remove('active'));
+      const a = document.querySelector('.sidebar a[href="#'+e.target.id+'"]');
+      if(a) a.classList.add('active');
+    }
+  });
+},{threshold:.2});
+document.querySelectorAll('h2[id]').forEach(h => observer.observe(h));
+</script>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Developer Guide — OpensourceBackup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg-primary:#080c14;--bg-card:#141824;--bg-sidebar:#0d1220;--accent-cyan:#00d4ff;--accent-green:#00ff88;--text-primary:#e2e8f0;--text-secondary:#94a3b8;--border:#1e2a3a;--font-mono:'JetBrains Mono',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',sans-serif;display:flex;min-height:100vh}
+.sidebar{width:260px;min-width:260px;background:var(--bg-sidebar);border-right:1px solid var(--border);padding:24px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-title{padding:0 20px 16px;font-size:13px;font-weight:700;color:var(--accent-cyan);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);margin-bottom:12px}
+.sidebar a{display:block;padding:7px 20px;color:var(--text-secondary);text-decoration:none;font-size:13px;transition:all .15s;border-left:2px solid transparent}
+.sidebar a:hover,.sidebar a.active{color:var(--accent-cyan);border-left-color:var(--accent-cyan);background:rgba(0,212,255,.05)}
+.content{flex:1;padding:48px 56px;max-width:900px}
+h1{font-size:28px;font-weight:700;color:var(--accent-cyan);margin-bottom:8px}
+h1 .sub{font-size:14px;color:var(--text-secondary);font-weight:400}
+h2{font-size:20px;font-weight:600;color:var(--accent-cyan);margin:40px 0 16px;padding-top:8px;border-top:1px solid var(--border)}
+h3{font-size:15px;font-weight:600;color:var(--accent-green);margin:20px 0 8px}
+p{color:var(--text-secondary);line-height:1.7;margin-bottom:12px}
+code{font-family:var(--font-mono);background:#0a1628;color:var(--accent-cyan);padding:2px 7px;border-radius:4px;font-size:13px}
+pre{background:#0a1628;border:1px solid var(--border);border-radius:8px;padding:20px;overflow-x:auto;margin:16px 0}
+pre code{background:none;padding:0;color:#a8d8ea;font-size:13px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{background:var(--bg-card);color:var(--accent-cyan);padding:10px 14px;text-align:left;font-weight:600;border:1px solid var(--border)}
+td{padding:9px 14px;border:1px solid var(--border);color:var(--text-secondary)}
+tr:nth-child(even) td{background:rgba(20,24,36,.5)}
+.checklist{list-style:none;padding:0;margin:12px 0}
+.checklist li{padding:6px 0;color:var(--text-secondary);font-size:13px;border-bottom:1px solid rgba(30,42,58,.5)}
+.checklist li::before{content:"☐ ";color:var(--accent-cyan)}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+  <div class="sidebar-title">Developer Guide</div>
+  <a href="#voraussetzungen">Voraussetzungen</a>
+  <a href="#setup">Setup</a>
+  <a href="#struktur">Projektstruktur</a>
+  <a href="#make">Make-Targets</a>
+  <a href="#envvars">Umgebungsvariablen</a>
+  <a href="#branching">Branching & Commits</a>
+  <a href="#tests">Tests</a>
+  <a href="#dod">Definition of Done</a>
+  <a href="#coding">Coding-Regeln</a>
+  <a href="#ci">CI/CD</a>
+</nav>
+<main class="content">
+  <h1>Developer Guide<br><span class="sub">OpensourceBackup — Stand B1–B7</span></h1>
+
+  <h2 id="voraussetzungen">Voraussetzungen</h2>
+  <pre><code>go 1.22+
+docker 24+ / docker compose 2.20+
+git 2.40+
+golangci-lint v2  →  make lint-install
+golang-migrate    →  go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+goimports         →  go install golang.org/x/tools/cmd/goimports@latest</code></pre>
+
+  <h2 id="setup">Setup</h2>
+  <pre><code>git clone https://github.com/cerberus8484/opensourcebackup.git
+cd opensourcebackup
+
+make deps          # go mod download
+make dev-up        # PostgreSQL + Redis starten (Docker)
+make migrate-up    # Schema anlegen
+make run           # Control Plane → http://localhost:8080
+
+# Gesundheitsprüfung
+curl http://localhost:8080/health
+# → {"status":"ok"}</code></pre>
+
+  <h2 id="struktur">Projektstruktur</h2>
+  <pre><code>opensourcebackup/
+├── cmd/control-plane/main.go   # Einstiegspunkt: Server + Scheduler + Middleware
+├── internal/
+│   ├── api/                    # HTTP REST API
+│   │   ├── handler.go          # Handler-Struct, DI, decode(), ErrBodyTooLarge
+│   │   ├── middleware.go       # Recovery · SecurityHeaders · BodyLimit · Logging · Timeout
+│   │   ├── routes.go           # URL-Routing /health + /v1/...
+│   │   ├── systems.go          # CRUD /v1/systems
+│   │   ├── repositories.go     # CRUD /v1/repositories
+│   │   ├── policies.go         # CRUD /v1/policies
+│   │   ├── jobs.go             # CRUD /v1/jobs
+│   │   └── snapshots.go        # CRD  /v1/snapshots
+│   ├── catalog/                # Datenbankschicht
+│   │   ├── db.go               # pgxpool, Open/Ping/Close
+│   │   ├── models.go           # System · Repository · Policy · Job · Snapshot
+│   │   ├── errors.go           # ErrNotFound · ErrConflict
+│   │   └── *.go                # Store-Interfaces + pgx-Implementierungen
+│   └── scheduler/
+│       └── scheduler.go        # Cron-Dispatcher + Dead-Man's-Switch
+├── migrations/                 # 000001–000005 up/down SQL
+├── deployments/docker-compose/ # dev.yml: PostgreSQL 16 + Redis 7
+├── .golangci.hard.yml          # Lint Schicht 1 — blockiert CI
+├── .golangci.warn.yml          # Lint Schicht 2 — informativ
+├── .github/workflows/ci.yml    # CI: Test + Lint
+└── Makefile</code></pre>
+
+  <h2 id="make">Make-Targets</h2>
+  <table>
+    <tr><th>Target</th><th>Beschreibung</th></tr>
+    <tr><td><code>make deps</code></td><td>go mod download</td></tr>
+    <tr><td><code>make test</code></td><td>Unit-Tests (kein Docker nötig)</td></tr>
+    <tr><td><code>make test-integration</code></td><td>Integration-Tests gegen PostgreSQL</td></tr>
+    <tr><td><code>make lint</code></td><td>golangci-lint Schicht 1 — blockiert bei Verletzung</td></tr>
+    <tr><td><code>make lint-warn</code></td><td>golangci-lint Schicht 2 — zeigt Baustellen</td></tr>
+    <tr><td><code>make fmt</code></td><td>gofmt + goimports</td></tr>
+    <tr><td><code>make check</code></td><td>fmt + lint + test in einem</td></tr>
+    <tr><td><code>make run</code></td><td>Control Plane starten</td></tr>
+    <tr><td><code>make dev-up</code></td><td>Docker Compose starten</td></tr>
+    <tr><td><code>make dev-down</code></td><td>Docker Compose stoppen</td></tr>
+    <tr><td><code>make migrate-up</code></td><td>Alle Migrationen ausführen</td></tr>
+    <tr><td><code>make migrate-down</code></td><td>Alle Migrationen rückgängig</td></tr>
+    <tr><td><code>make lint-install</code></td><td>golangci-lint v2 installieren</td></tr>
+  </table>
+
+  <h2 id="envvars">Umgebungsvariablen</h2>
+  <table>
+    <tr><th>Variable</th><th>Pflicht</th><th>Default</th><th>Beschreibung</th></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>✅</td><td>—</td><td>PostgreSQL DSN</td></tr>
+    <tr><td><code>LISTEN_ADDR</code></td><td>—</td><td><code>:8080</code></td><td>HTTP-Bind-Adresse</td></tr>
+    <tr><td><code>REDIS_URL</code></td><td>—</td><td>—</td><td>Redis-Verbindung</td></tr>
+  </table>
+  <p>Vorlage: <code>.env.example</code> — <strong>niemals</strong> <code>.env.local</code> committen.</p>
+
+  <h2 id="branching">Branching &amp; Commits</h2>
+  <p>GitHub Flow — ein <code>main</code>-Branch, kurzlebige Feature-Branches:</p>
+  <pre><code>feature/OB-123-kurzbeschreibung
+fix/OB-456-beschreibung
+docs/OB-789-beschreibung</code></pre>
+  <p>Conventional Commits:</p>
+  <pre><code>feat(catalog): add SystemStore with CRUD operations
+fix(api): return 404 on missing system instead of 500
+docs(adr): add ADR-004 for scheduler design
+chore(lint): promote revive to hard layer</code></pre>
+
+  <h2 id="tests">Tests schreiben</h2>
+  <pre><code>// Unit-Test (kein Build-Tag nötig)
+func TestCreateSystem_Returns201_WithID(t *testing.T) { ... }
+
+// Integration-Test
+//go:build integration
+func TestSystemStore_Create_AssignsIDAndCreatedAt(t *testing.T) { ... }</code></pre>
+  <pre><code># Nur Unit-Tests
+go test ./...
+
+# Integration-Tests
+DATABASE_URL=... go test -tags=integration ./internal/catalog/...</code></pre>
+  <p>Aktuell: <strong>48 Tests</strong> — alle grün.</p>
+
+  <h2 id="dod">Definition of Done</h2>
+  <ul class="checklist">
+    <li><code>go build ./...</code> — kein Fehler</li>
+    <li><code>make lint</code> — 0 Issues</li>
+    <li><code>make test</code> — alle grün</li>
+    <li>Integration-Tests für neue DB-Stores</li>
+    <li><code>CHANGELOG.md</code> aktualisiert (bei feat/fix)</li>
+    <li>Beide READMEs (EN + DE) aktualisiert wenn nötig</li>
+    <li>ADR erstellt wenn Architekturentscheidung getroffen wurde</li>
+    <li>Keine Credentials oder private Daten im Code</li>
+  </ul>
+
+  <h2 id="coding">Coding-Regeln</h2>
+  <table>
+    <tr><th>Prinzip</th><th>Anwendung im Projekt</th></tr>
+    <tr><td>DIP</td><td>Handler hängen von Store-Interfaces ab, nicht von pgx-Implementierungen</td></tr>
+    <tr><td>SRP</td><td>Eine Datei — eine Verantwortlichkeit</td></tr>
+    <tr><td>IOSP</td><td><code>main.go</code> orchestriert, <code>catalog/</code> führt aus</td></tr>
+    <tr><td>KISS</td><td>stdlib <code>net/http</code> statt Router-Framework</td></tr>
+    <tr><td>YAGNI</td><td>Keine vorauseilenden Abstraktionen</td></tr>
+    <tr><td>DRY</td><td><code>handleDecodeError()</code> statt wiederholter writeError-Aufrufe</td></tr>
+  </table>
+  <p>Vollständige Regeln: <a href="developer-guide/CLEAN_CODE.md" style="color:var(--accent-cyan)">CLEAN_CODE.md</a></p>
+
+  <h2 id="ci">CI/CD</h2>
+  <pre><code>.github/workflows/ci.yml — läuft bei jedem Push/PR auf main:
+
+1. test      — Unit + Integration gegen PostgreSQL
+2. lint      — golangci-lint hard  (blockiert Merge)
+3. lint-warn — golangci-lint warn  (non-blocking, informativ)</code></pre>
+</main>
+<script>
+const links = document.querySelectorAll('.sidebar a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      links.forEach(l => l.classList.remove('active'));
+      const a = document.querySelector('.sidebar a[href="#'+e.target.id+'"]');
+      if(a) a.classList.add('active');
+    }
+  });
+},{threshold:.3});
+document.querySelectorAll('h2[id]').forEach(h => observer.observe(h));
+</script>
+</body>
+</html>
