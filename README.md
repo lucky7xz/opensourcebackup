@@ -1,97 +1,113 @@
 # OpensourceBackup
 
-> Open-Source Backup Control Plane — zentrales Orchestrierungs- und Verwaltungssystem für 100+ Systeme.
+> Open-Source Backup Control Plane — central orchestration and management system for 100+ systems.
 
-## Übersicht
+🇩🇪 [Deutsche Version](README.de.md) | 🇬🇧 English
 
-OpensourceBackup ist kein neues Backup-Tool. Es ist eine **Backup Control Plane**:
-eine Plattform, die bewährte Backup-Engines (Restic, Borg, pgBackRest, Velero) orchestriert,
-zentral verwaltet, überwacht und Restore-Integrität automatisch verifiziert.
+---
+
+## Overview
+
+OpensourceBackup is not a new backup tool. It is a **Backup Control Plane**:
+a platform that orchestrates proven backup engines (Restic, Borg, pgBackRest, Velero),
+manages them centrally, monitors their status, and automatically verifies restore integrity.
 
 ```
-Quellen (Server, VMs, DBs, Endgeräte)
+Sources (Servers, VMs, DBs, Endpoints)
     ↓
-Backup-Agent (Restic / Borg / pgBackRest / Velero)
+Backup Agent (Restic / Borg / pgBackRest / Velero)
     ↓
-Control Plane (Scheduler, Katalog, API, Web-UI)
+Control Plane (Scheduler, Catalog, API, Web-UI)
     ↓
 Storage (MinIO / ZFS / S3 / GCS / Azure)
     ↓
 Monitoring (Prometheus / Grafana / Alertmanager / Loki)
 ```
 
-## Schnellstart
+## Quick Start
 
 ```bash
-# Repository klonen
-git clone https://github.com/your-org/opensourcebackup.git
+# Clone repository
+git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
 
-# Lokale Entwicklungsumgebung starten
-docker compose up -d
+# Start local development environment
+make dev-up
 
-# Agent auf einem Zielsystem installieren
-./scripts/agent-install.sh --server https://your-control-plane
+# Run database migrations
+make migrate-up
+
+# Start control plane
+make run
 ```
 
-## Dokumentation
+## Development
 
-| Dokument | Beschreibung |
+```bash
+# Install dependencies
+make deps
+
+# Run unit tests
+make test
+
+# Run integration tests (requires running PostgreSQL)
+make test-integration
+
+# Lint (hard — blocks on violation)
+make lint
+
+# Lint (warn — shows issues, never blocks)
+make lint-warn
+
+# Format + lint + test in one
+make check
+```
+
+## Documentation
+
+| Document | Description |
 |---|---|
-| [Developer Guide](docs/developer-guide/DEVELOPER_GUIDE.md) | Einstieg, Setup, Prozesse, Regeln |
-| [Clean Code & Wertesystem](docs/developer-guide/CLEAN_CODE.md) | Verbindliche Qualitätsprinzipien |
-| [Architektur](docs/architecture/ARCHITECTURE.md) | Zielarchitektur, Komponenten, Entscheidungen |
-| [Changelog](CHANGELOG.md) | Versionshistorie nach Keep a Changelog |
-| [Contributing](CONTRIBUTING.md) | Wie man beiträgt |
+| [Developer Guide](docs/developer-guide/DEVELOPER_GUIDE.md) | Setup, workflow, processes, rules |
+| [Clean Code & Values](docs/developer-guide/CLEAN_CODE.md) | Mandatory quality principles |
+| [Architecture](docs/architecture/ARCHITECTURE.md) | Target architecture, components, decisions |
+| [Changelog](CHANGELOG.md) | Version history following Keep a Changelog |
+| [Contributing](CONTRIBUTING.md) | How to contribute |
 | [ADR Index](docs/adr/README.md) | Architecture Decision Records |
 
-## Projektstruktur
+## Project Structure
 
 ```
 opensourcebackup/
-├── agent/                  # Backup-Agent (Go)
-│   ├── engines/            # Engine-Wrapper (Restic, Borg, pgBackRest, Velero)
-│   ├── collectors/         # System-Inventar, Metriken
-│   ├── metrics/            # Prometheus-Exporter
-│   └── config/             # Agent-Konfiguration
-├── server/                 # Control Plane (Go)
-│   ├── api/                # REST API
-│   ├── scheduler/          # Job-Scheduler
-│   ├── catalog/            # PostgreSQL-Katalog
-│   ├── auth/               # Authentifizierung / RBAC
-│   └── policies/           # Policy-Engine
-├── web/                    # Web-Dashboard (React / TypeScript)
-│   ├── dashboard/
-│   ├── systems/
-│   ├── jobs/
-│   ├── restores/
-│   └── alerts/
-├── deployments/            # Deployment-Konfigurationen
-│   ├── docker-compose/
-│   ├── helm/
-│   └── ansible/
-├── docs/                   # Dokumentation
-│   ├── architecture/
-│   ├── developer-guide/
-│   ├── adr/
-│   └── changelog/
-└── scripts/                # Hilfsskripte
+├── cmd/
+│   └── control-plane/      # Control Plane entry point
+├── internal/
+│   ├── api/                # HTTP REST API handlers + middleware
+│   ├── catalog/            # PostgreSQL data access layer
+│   └── scheduler/          # Cron scheduler + dead-man's switch
+├── migrations/             # SQL migrations (golang-migrate)
+├── deployments/
+│   └── docker-compose/     # Local dev stack (PostgreSQL + Redis)
+└── docs/
+    ├── architecture/       # Architecture documentation
+    ├── developer-guide/    # Developer guide + clean code principles
+    ├── quality/            # Lint strategy
+    └── adr/                # Architecture Decision Records
 ```
 
-## Technologie-Stack
+## Technology Stack
 
-| Schicht | Technologie |
+| Layer | Technology |
 |---|---|
 | Agent / Server | Go 1.22+ |
 | Web-UI | React 18 + TypeScript 5 |
-| Datenbank | PostgreSQL 16 |
+| Database | PostgreSQL 16 |
 | Message Queue | Redis Streams |
 | Monitoring | Prometheus + Grafana + Loki |
 | Container | Docker + Kubernetes (Helm) |
 | IaC | Terraform + Ansible |
 | Secrets | HashiCorp Vault / SOPS |
-| Backup-Engines | Restic, Borg, pgBackRest, Velero |
+| Backup Engines | Restic, Borg, pgBackRest, Velero |
 
-## Lizenz
+## License
 
-Apache 2.0 — siehe [LICENSE](LICENSE)
+Apache 2.0 — see [LICENSE](LICENSE)
