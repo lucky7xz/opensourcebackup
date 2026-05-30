@@ -19,6 +19,8 @@ func newTestHandler() *api.Handler {
 		newStubSystemStore(),
 		newStubRepositoryStore(),
 		newStubPolicyStore(),
+		newStubJobStore(),
+		newStubSnapshotStore(),
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
 }

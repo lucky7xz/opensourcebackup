@@ -38,6 +38,8 @@ func main() {
 		catalog.NewSystemStore(db),
 		catalog.NewRepositoryStore(db),
 		catalog.NewPolicyStore(db),
+		catalog.NewJobStore(db),
+		catalog.NewSnapshotStore(db),
 		logger,
 	)
 

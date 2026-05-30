@@ -107,6 +107,117 @@ func (s *stubRepositoryStore) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// stubJobStore is an in-memory JobStore for unit tests.
+type stubJobStore struct {
+	jobs map[uuid.UUID]*catalog.BackupJob
+}
+
+func newStubJobStore() *stubJobStore {
+	return &stubJobStore{jobs: make(map[uuid.UUID]*catalog.BackupJob)}
+}
+
+func (s *stubJobStore) Create(_ context.Context, j *catalog.BackupJob) error {
+	j.ID = uuid.New()
+	cp := *j
+	s.jobs[j.ID] = &cp
+	return nil
+}
+
+func (s *stubJobStore) GetByID(_ context.Context, id uuid.UUID) (*catalog.BackupJob, error) {
+	j, ok := s.jobs[id]
+	if !ok {
+		return nil, catalog.ErrNotFound
+	}
+	cp := *j
+	return &cp, nil
+}
+
+func (s *stubJobStore) List(_ context.Context) ([]catalog.BackupJob, error) {
+	out := make([]catalog.BackupJob, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		out = append(out, *j)
+	}
+	return out, nil
+}
+
+func (s *stubJobStore) ListBySystemID(_ context.Context, systemID uuid.UUID) ([]catalog.BackupJob, error) {
+	var out []catalog.BackupJob
+	for _, j := range s.jobs {
+		if j.SystemID == systemID {
+			out = append(out, *j)
+		}
+	}
+	return out, nil
+}
+
+func (s *stubJobStore) Update(_ context.Context, j *catalog.BackupJob) error {
+	if _, ok := s.jobs[j.ID]; !ok {
+		return catalog.ErrNotFound
+	}
+	cp := *j
+	s.jobs[j.ID] = &cp
+	return nil
+}
+
+func (s *stubJobStore) Delete(_ context.Context, id uuid.UUID) error {
+	if _, ok := s.jobs[id]; !ok {
+		return catalog.ErrNotFound
+	}
+	delete(s.jobs, id)
+	return nil
+}
+
+// stubSnapshotStore is an in-memory SnapshotStore for unit tests.
+type stubSnapshotStore struct {
+	snaps map[uuid.UUID]*catalog.Snapshot
+}
+
+func newStubSnapshotStore() *stubSnapshotStore {
+	return &stubSnapshotStore{snaps: make(map[uuid.UUID]*catalog.Snapshot)}
+}
+
+func (s *stubSnapshotStore) Create(_ context.Context, snap *catalog.Snapshot) error {
+	snap.ID = uuid.New()
+	cp := *snap
+	s.snaps[snap.ID] = &cp
+	return nil
+}
+
+func (s *stubSnapshotStore) GetByID(_ context.Context, id uuid.UUID) (*catalog.Snapshot, error) {
+	snap, ok := s.snaps[id]
+	if !ok {
+		return nil, catalog.ErrNotFound
+	}
+	cp := *snap
+	return &cp, nil
+}
+
+func (s *stubSnapshotStore) List(_ context.Context) ([]catalog.Snapshot, error) {
+	out := make([]catalog.Snapshot, 0, len(s.snaps))
+	for _, snap := range s.snaps {
+		out = append(out, *snap)
+	}
+	return out, nil
+}
+
+func (s *stubSnapshotStore) ListByJobID(_ context.Context, jobID uuid.UUID) ([]catalog.Snapshot, error) {
+	var out []catalog.Snapshot
+	for _, snap := range s.snaps {
+		if snap.JobID == jobID {
+			out = append(out, *snap)
+		}
+	}
+	return out, nil
+}
+
+func (s *stubSnapshotStore) Delete(_ context.Context, id uuid.UUID) error {
+	if _, ok := s.snaps[id]; !ok {
+		return catalog.ErrNotFound
+	}
+	delete(s.snaps, id)
+	return nil
+}
+
 // stubPolicyStore is an in-memory PolicyStore for unit tests.
 type stubPolicyStore struct {
 	policies map[uuid.UUID]*catalog.BackupPolicy

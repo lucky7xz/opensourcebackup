@@ -14,6 +14,8 @@ type Handler struct {
 	systems      catalog.SystemStore
 	repositories catalog.RepositoryStore
 	policies     catalog.PolicyStore
+	jobs         catalog.JobStore
+	snapshots    catalog.SnapshotStore
 	log          *slog.Logger
 }
 
@@ -22,12 +24,16 @@ func New(
 	systems catalog.SystemStore,
 	repositories catalog.RepositoryStore,
 	policies catalog.PolicyStore,
+	jobs catalog.JobStore,
+	snapshots catalog.SnapshotStore,
 	log *slog.Logger,
 ) *Handler {
 	return &Handler{
 		systems:      systems,
 		repositories: repositories,
 		policies:     policies,
+		jobs:         jobs,
+		snapshots:    snapshots,
 		log:          log,
 	}
 }
