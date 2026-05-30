@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
@@ -14,12 +15,14 @@ var ErrBodyTooLarge = errors.New("request body too large")
 
 // Handler holds all store dependencies for the HTTP API.
 type Handler struct {
-	systems      catalog.SystemStore
-	repositories catalog.RepositoryStore
-	policies     catalog.PolicyStore
-	jobs         catalog.JobStore
-	snapshots    catalog.SnapshotStore
-	log          *slog.Logger
+	systems          catalog.SystemStore
+	repositories     catalog.RepositoryStore
+	policies         catalog.PolicyStore
+	jobs             catalog.JobStore
+	snapshots        catalog.SnapshotStore
+	enrollmentTokens auth.EnrollmentTokenStore
+	agentTokens      auth.AgentTokenStore
+	log              *slog.Logger
 }
 
 // New creates a Handler wired to the given stores.
@@ -29,15 +32,19 @@ func New(
 	policies catalog.PolicyStore,
 	jobs catalog.JobStore,
 	snapshots catalog.SnapshotStore,
+	enrollmentTokens auth.EnrollmentTokenStore,
+	agentTokens auth.AgentTokenStore,
 	log *slog.Logger,
 ) *Handler {
 	return &Handler{
-		systems:      systems,
-		repositories: repositories,
-		policies:     policies,
-		jobs:         jobs,
-		snapshots:    snapshots,
-		log:          log,
+		systems:          systems,
+		repositories:     repositories,
+		policies:         policies,
+		jobs:             jobs,
+		snapshots:        snapshots,
+		enrollmentTokens: enrollmentTokens,
+		agentTokens:      agentTokens,
+		log:              log,
 	}
 }
 

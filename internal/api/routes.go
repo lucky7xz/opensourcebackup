@@ -1,10 +1,28 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/cerberus8484/opensourcebackup/internal/auth"
+)
 
 // RegisterRoutes attaches all v1 API routes to mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+
+	// Enrollment (admin operation — protected by network/future admin auth)
+	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token", h.createEnrollmentToken)
+
+	// Agent enrollment (unauthenticated — presents one-time token)
+	mux.HandleFunc("POST /v1/agent/enroll", h.enrollAgent)
+
+	// Agent-only routes (protected by AgentAuth middleware)
+	agentMux := http.NewServeMux()
+	agentMux.HandleFunc("GET /v1/agent/jobs", h.listAgentJobs)
+	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/start", h.startAgentJob)
+	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/complete", h.completeAgentJob)
+	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/fail", h.failAgentJob)
+	mux.Handle("/v1/agent/", AgentAuth(h.agentTokens)(agentMux))
 
 	mux.HandleFunc("GET /v1/systems", h.listSystems)
 	mux.HandleFunc("POST /v1/systems", h.createSystem)
@@ -39,3 +57,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// unused import guard
+var _ = auth.HashToken

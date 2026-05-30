@@ -22,6 +22,8 @@ func newTestHandler() *api.Handler {
 		newStubPolicyStore(),
 		newStubJobStore(),
 		newStubSnapshotStore(),
+		newStubEnrollmentTokenStore(),
+		newStubAgentTokenStore(),
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
 }

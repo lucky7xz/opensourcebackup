@@ -2,11 +2,47 @@ package api_test
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
+
+// stubEnrollmentTokenStore — in-memory for tests.
+type stubEnrollmentTokenStore struct{}
+
+func newStubEnrollmentTokenStore() *stubEnrollmentTokenStore { return &stubEnrollmentTokenStore{} }
+
+func (s *stubEnrollmentTokenStore) Create(_ context.Context, systemID uuid.UUID, _ string, expiresAt time.Time) (*auth.EnrollmentToken, error) {
+	return &auth.EnrollmentToken{ID: uuid.New(), SystemID: systemID, ExpiresAt: expiresAt, CreatedAt: time.Now()}, nil
+}
+func (s *stubEnrollmentTokenStore) Consume(_ context.Context, _ string) (*auth.EnrollmentToken, error) {
+	return nil, auth.ErrInvalidToken
+}
+func (s *stubEnrollmentTokenStore) Revoke(_ context.Context, _ uuid.UUID) error { return nil }
+
+// stubAgentTokenStore — in-memory for tests.
+type stubAgentTokenStore struct {
+	tokens map[string]uuid.UUID // hash → systemID
+}
+
+func newStubAgentTokenStore() *stubAgentTokenStore {
+	return &stubAgentTokenStore{tokens: make(map[string]uuid.UUID)}
+}
+
+func (s *stubAgentTokenStore) Create(_ context.Context, systemID uuid.UUID, hash string) (*auth.AgentToken, error) {
+	s.tokens[hash] = systemID
+	return &auth.AgentToken{ID: uuid.New(), SystemID: systemID, CreatedAt: time.Now()}, nil
+}
+func (s *stubAgentTokenStore) ValidateAndTouch(_ context.Context, hash string) (uuid.UUID, error) {
+	if id, ok := s.tokens[hash]; ok {
+		return id, nil
+	}
+	return uuid.Nil, auth.ErrInvalidToken
+}
+func (s *stubAgentTokenStore) Revoke(_ context.Context, _ uuid.UUID) error { return nil }
 
 // stubSystemStore is an in-memory SystemStore for unit tests.
 type stubSystemStore struct {

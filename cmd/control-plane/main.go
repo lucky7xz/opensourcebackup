@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cerberus8484/opensourcebackup/internal/api"
+	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 	"github.com/cerberus8484/opensourcebackup/internal/scheduler"
 )
@@ -51,6 +52,8 @@ func main() {
 		catalog.NewPolicyStore(db),
 		catalog.NewJobStore(db),
 		catalog.NewSnapshotStore(db),
+		auth.NewEnrollmentTokenStore(db),
+		auth.NewAgentTokenStore(db),
 		logger,
 	)
 
