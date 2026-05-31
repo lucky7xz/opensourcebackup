@@ -56,6 +56,7 @@ fi
 DB_USER="opensourcebackup"
 DB_NAME="opensourcebackup"
 CREDS_FILE="/etc/opensourcebackup/.db_password"
+LOCAL_IP=$(hostname -I | awk '{print $1}')
 
 # Generate password once and persist it — never regenerate on re-runs
 mkdir -p /etc/opensourcebackup
@@ -205,22 +206,25 @@ if curl -fsSL --head "$WEB_UI_URL" &>/dev/null; then
   curl -fsSL "$WEB_UI_URL" | tar -xz -C "$WEB_UI_DIR"
   ok "Web UI downloaded"
 else
-  # Build from source
-  if command -v node &>/dev/null; then
-    cd /tmp
-    git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git osb-web-build 2>/dev/null || true
-    if [ -d osb-web-build/web ]; then
-      cd osb-web-build/web
-      VITE_API_URL="" npm install --silent
-      npm run build --silent
-      cp -r dist/. "$WEB_UI_DIR/"
-      ok "Web UI built from source"
-    fi
-    cd /; rm -rf /tmp/osb-web-build
-  else
-    warn "Node.js not found — Web UI will not be served. Install node and re-run."
-    warn "Access the API directly: http://${LOCAL_IP}:${OSB_PORT}/health"
+  # Install Node.js if not available
+  if ! command -v node &>/dev/null; then
+    info "Installing Node.js 20 LTS..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+    apt-get install -y -qq nodejs
+    ok "Node.js $(node --version) installed"
   fi
+
+  # Build Web UI from source
+  rm -rf /tmp/osb-web-build
+  git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git /tmp/osb-web-build
+  if [ -d /tmp/osb-web-build/web ]; then
+    cd /tmp/osb-web-build/web
+    VITE_API_URL="" npm install --silent
+    VITE_API_URL="" npm run build --silent
+    cp -r dist/. "$WEB_UI_DIR/"
+    ok "Web UI built and ready"
+  fi
+  cd /; rm -rf /tmp/osb-web-build
 fi
 
 chown -R "$OSB_USER:$OSB_USER" "$WEB_UI_DIR" 2>/dev/null || true
@@ -293,7 +297,6 @@ sleep 3
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
-LOCAL_IP=$(hostname -I | awk '{print $1}')
 WEB_UI_URL="http://${LOCAL_IP}:${OSB_PORT}/ui/"
 API_URL="http://${LOCAL_IP}:${OSB_PORT}"
 
