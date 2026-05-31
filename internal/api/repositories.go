@@ -1,11 +1,14 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
 
 func (h *Handler) listRepositories(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +43,13 @@ func (h *Handler) createRepository(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionRepositoryCreated, audit.ResourceRepository, repo.ID.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		UA(r.UserAgent()).
+		Details(fmt.Sprintf("type=%s location=%s immutable_mode=%s", repo.Type, repo.Location, repo.ImmutableMode)).
+		Build())
 	writeJSON(w, http.StatusCreated, repo)
 }
 
@@ -63,6 +73,10 @@ func (h *Handler) updateRepository(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+
+	// Load existing to detect immutable_mode change
+	existing, _ := h.repositories.GetByID(r.Context(), id)
+
 	var repo catalog.BackupRepository
 	if err := decode(r, &repo); err != nil {
 		handleDecodeError(w, err)
@@ -73,6 +87,26 @@ func (h *Handler) updateRepository(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+
+	// Determine action and severity
+	action := audit.ActionRepositoryUpdated
+	sev := audit.SeverityInfo
+	details := fmt.Sprintf("type=%s", repo.Type)
+
+	if existing != nil && existing.ImmutableMode != repo.ImmutableMode {
+		action = audit.ActionRepositoryImmutableChanged
+		sev = audit.SeverityWarning
+		details = fmt.Sprintf("immutable_mode: %s → %s", existing.ImmutableMode, repo.ImmutableMode)
+	}
+
+	_ = h.auditStore.Append(r.Context(), audit.Event(action, audit.ResourceRepository, id.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		UA(r.UserAgent()).
+		Details(details).
+		Severity(sev).
+		Build())
+
 	writeJSON(w, http.StatusOK, repo)
 }
 
@@ -86,5 +120,11 @@ func (h *Handler) deleteRepository(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionRepositoryDeleted, audit.ResourceRepository, id.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		Severity(audit.SeverityWarning).
+		Build())
 	w.WriteHeader(http.StatusNoContent)
 }

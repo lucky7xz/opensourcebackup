@@ -1,12 +1,15 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
 
 // handleListAgentRetentionJobs handles GET /v1/agent/retention/jobs
@@ -219,6 +222,13 @@ func (h *Handler) handleCompleteRetentionJob(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionRetentionCompleted, audit.ResourceRetention, jobID.String()).
+		By(audit.ActorAgent).
+		IP(security.ClientIPHashed(r)).
+		Details(fmt.Sprintf("removed_snapshots=%d", len(req.RemovedEngineIDs))).
+		Build())
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -247,5 +257,12 @@ func (h *Handler) handleFailRetentionJob(w http.ResponseWriter, r *http.Request)
 		writeError(w, httpStatusForError(err), "update job failed")
 		return
 	}
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionRetentionFailed, audit.ResourceRetention, jobID.String()).
+		By(audit.ActorAgent).
+		IP(security.ClientIPHashed(r)).
+		Details(req.Reason).
+		Severity(audit.SeverityWarning).
+		Failed().Build())
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

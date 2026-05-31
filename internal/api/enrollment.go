@@ -6,13 +6,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/auth"
+	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
 
 const enrollmentTokenTTL = 30 * time.Minute
 
 // createEnrollmentToken handles POST /v1/systems/{id}/enrollment-token.
-// Creates a one-time enrollment token for the given system (admin operation).
 func (h *Handler) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	systemID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -34,7 +35,14 @@ func (h *Handler) createEnrollmentToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Return the raw token once — never log it
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionEnrollmentTokenCreated, audit.ResourceAgent, systemID.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		UA(r.UserAgent()).
+		Details("ttl=30m").
+		Build())
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token":      raw,
 		"system_id":  systemID,
@@ -43,7 +51,6 @@ func (h *Handler) createEnrollmentToken(w http.ResponseWriter, r *http.Request) 
 }
 
 // enrollAgent handles POST /v1/agent/enroll.
-// Agent presents a one-time enrollment token and receives a long-lived agent token.
 func (h *Handler) enrollAgent(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		EnrollmentToken string `json:"enrollment_token"`
@@ -60,8 +67,14 @@ func (h *Handler) enrollAgent(w http.ResponseWriter, r *http.Request) {
 	hash := auth.HashToken(body.EnrollmentToken)
 	et, err := h.enrollmentTokens.Consume(r.Context(), hash)
 	if err != nil {
-		// Do not reveal whether the token exists — always 401
 		h.log.Warn("enrollment failed", "reason", err.Error())
+		_ = h.auditStore.Append(r.Context(), audit.Event(
+			audit.ActionAgentEnrolled, audit.ResourceAgent, "").
+			By(audit.ActorAgent).
+			IP(security.ClientIPHashed(r)).
+			Severity(audit.SeverityWarning).
+			Details("enrollment failed: invalid or expired token").
+			Failed().Build())
 		writeError(w, http.StatusUnauthorized, "invalid or expired enrollment token")
 		return
 	}
@@ -79,7 +92,13 @@ func (h *Handler) enrollAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the raw agent token once — never log it
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionAgentEnrolled, audit.ResourceAgent, et.SystemID.String()).
+		By(audit.ActorAgent).
+		IP(security.ClientIPHashed(r)).
+		Details("agent successfully enrolled").
+		Build())
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token":     agentToken,
 		"system_id": et.SystemID,
