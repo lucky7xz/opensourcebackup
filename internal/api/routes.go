@@ -65,7 +65,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /v1/repositories", h.listRepositories)
 	mux.HandleFunc("POST /v1/repositories", h.createRepository)
+	mux.HandleFunc("GET /v1/repositories/health", h.handleListRepositoryHealth)
 	mux.HandleFunc("GET /v1/repositories/{id}", h.getRepository)
+	mux.HandleFunc("GET /v1/repositories/{id}/health", h.handleRepositoryHealth)
 	mux.HandleFunc("PUT /v1/repositories/{id}", h.updateRepository)
 	mux.HandleFunc("DELETE /v1/repositories/{id}", h.deleteRepository)
 
