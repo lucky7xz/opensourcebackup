@@ -18,6 +18,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /scripts/install-agent.sh", h.serveInstallScript)
 	mux.HandleFunc("GET /scripts/install-agent-freebsd.sh", h.serveInstallScript)
 	mux.HandleFunc("GET /scripts/install-agent.ps1", h.serveInstallScript)
+	// Local (all-in-one) installer script
+	mux.HandleFunc("GET /scripts/install-local.ps1", h.serveInstallScript)
 
 	// Enrollment (admin operation — protected by network/future admin auth)
 	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token", h.createEnrollmentToken)
