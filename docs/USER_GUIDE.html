@@ -37,7 +37,8 @@ tr:nth-child(even) td{background:rgba(20,24,36,.5)}
 <nav class="sidebar">
   <div class="sidebar-title">User Guide</div>
   <a href="#overview">Übersicht</a>
-  <a href="#starten">Starten</a>
+  <a href="#proxmox">🔥 Proxmox Install</a>
+  <a href="#starten">Lokaler Start</a>
   <a href="#enrollment">Agent einrichten</a>
   <a href="#systeme">Systeme</a>
   <a href="#repositories">Repositories</a>
@@ -50,7 +51,7 @@ tr:nth-child(even) td{background:rgba(20,24,36,.5)}
   <a href="#security">Sicherheitshinweise</a>
 </nav>
 <main class="content">
-  <h1>User Guide<br><span class="sub">OpensourceBackup — Stand B1�B16</span></h1>
+  <h1>User Guide<br><span class="sub">OpensourceBackup — Stand B1�B16</span></h1>
 
   <h2 id="overview">Was ist OpensourceBackup?</h2>
   <p>OpensourceBackup sichert Dateien, Ordner und Datenbanken auf deinen Servern und Clients — zentral verwaltet, automatisch überwacht.</p>
@@ -62,7 +63,54 @@ Agent (auf jedem Zielsystem)
   → holt Jobs → führt restic backup aus → meldet zurück</code></pre>
   <p><strong>Was du sichern kannst:</strong> Dateien &amp; Ordner, PostgreSQL (pgBackRest), komplette Systeme (Restic), Kubernetes (Velero).</p>
 
-  <h2 id="starten">Control Plane starten</h2>
+  <h2 id="proxmox">🔥 Installation auf Proxmox (Empfehlung)</h2>
+  <p>Empfohlener Weg: <strong>Debian 12 LXC Container</strong> auf Proxmox VE.</p>
+
+  <h3>Schritt 1 — LXC Container anlegen</h3>
+  <pre><code># Im Proxmox Shell als root:
+pveam update
+pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+
+pct create 200 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+  --hostname opensourcebackup \
+  --memory 2048 --cores 2 \
+  --rootfs local-lvm:20 \
+  --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  --features nesting=1 --unprivileged 1
+
+pct start 200 && pct enter 200</code></pre>
+
+  <h3>Schritt 2 — Install Script</h3>
+  <p>Im Container als root:</p>
+  <pre><code>curl -fsSL \
+  https://raw.githubusercontent.com/cerberus8484/opensourcebackup/main/scripts/install-server.sh \
+  | bash</code></pre>
+  <p>Das Script installiert Docker, PostgreSQL 16, Redis 7, führt Migrationen aus und erstellt einen systemd-Service.</p>
+
+  <h3>Schritt 3 — Windows Agent installieren</h3>
+  <pre><code># Token aus der Web-UI (Agents → Enroll Agent)
+$env:CONTROL_PLANE_URL  = "http://192.168.1.xxx:8080"
+$env:ENROLLMENT_TOKEN   = "&lt;token&gt;"
+$env:RESTIC_PASSWORD    = "&lt;passwort&gt;"
+$env:RESTIC_REPO        = "Z:\OpenSourceBackup"
+.\opensourcebackup-agent.exe</code></pre>
+
+  <h3>Schritt 4 — Linux Agent installieren</h3>
+  <pre><code>CONTROL_PLANE_URL=http://192.168.1.xxx:8080 \
+ENROLLMENT_TOKEN=&lt;token&gt; \
+RESTIC_PASSWORD=&lt;passwort&gt; \
+RESTIC_REPO=/mnt/nas/backups \
+bash &lt;(curl -fsSL http://192.168.1.xxx:8080/scripts/install-agent.sh)</code></pre>
+
+  <h3>Verwaltungs-Befehle</h3>
+  <pre><code>systemctl status opensourcebackup       # Status
+journalctl -u opensourcebackup -f      # Logs
+systemctl restart opensourcebackup     # Neustart
+docker compose -f /opt/opensourcebackup/docker-compose.yml ps  # DB-Status</code></pre>
+
+  <div class="warning">💡 Alternativ direkt auf dem Proxmox-Host ausführen (nicht empfohlen für Produktion).</div>
+
+  <h2 id="starten">Lokaler Start (Entwicklung)</h2>
   <pre><code>make dev-up && make migrate-up && make run
 curl http://localhost:8080/health  # → {"status":"ok"}</code></pre>
 

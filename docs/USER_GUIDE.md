@@ -17,7 +17,135 @@ Agent (auf Zielsystem)  → führt restic backup aus, meldet zurück
 
 ---
 
-## Starten
+## Installation auf Proxmox (Empfehlung)
+
+Der empfohlene Weg für Heimlabs und kleine Umgebungen: **Debian 12 LXC Container** auf Proxmox VE.
+
+### Warum LXC?
+
+```
+Proxmox VE
+└── LXC Container (Debian 12, 2 CPU, 2 GB RAM, 20 GB)
+    └── opensourcebackup-server  ← Control Plane + API + Web-UI
+    └── PostgreSQL 16 + Redis 7  ← Docker (automatisch installiert)
+```
+
+- Kleiner Footprint (~500 MB RAM im Betrieb)
+- Vollständig isoliert vom Proxmox-Host
+- Einfach snapshot-bar und migrierbar
+
+### Schritt 1 — LXC Container erstellen
+
+Im Proxmox Shell oder über das Datacenter-Terminal:
+
+```bash
+# Debian 12 Template herunterladen (einmalig)
+pveam update
+pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+
+# LXC erstellen
+pct create 200 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+  --hostname opensourcebackup \
+  --memory 2048 \
+  --cores 2 \
+  --rootfs local-lvm:20 \
+  --net0 name=eth0,bridge=vmbr0,ip=dhcp \
+  --features nesting=1 \
+  --unprivileged 1
+
+# Container starten
+pct start 200
+pct enter 200
+```
+
+### Schritt 2 — Install Script ausführen
+
+Im Container (als root):
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/cerberus8484/opensourcebackup/main/scripts/install-server.sh \
+  | bash
+```
+
+Das Script macht automatisch:
+- Docker installieren (falls nicht vorhanden)
+- PostgreSQL 16 + Redis 7 starten
+- Control Plane Binary herunterladen
+- Datenbank-Migrationen ausführen
+- systemd-Service einrichten (`opensourcebackup`)
+- Zugangsdaten in `/root/opensourcebackup-credentials.txt` speichern
+
+### Schritt 3 — Web-UI verbinden
+
+Auf deinem Laptop/PC (wo du die Web-UI nutzt):
+
+```bash
+# Statt localhost:8080 die IP des Containers verwenden
+VITE_API_URL=http://192.168.1.xxx:8080 npm run dev
+# → http://localhost:5173
+```
+
+Oder in der Web-UI unter **Settings** → API URL anpassen.
+
+### Schritt 4 — Agent installieren (Linux)
+
+Auf dem zu sichernden System:
+
+```bash
+# Enrollment-Token aus der Web-UI holen (Systems → Enrollment Token)
+CONTROL_PLANE_URL=http://192.168.1.xxx:8080 \
+ENROLLMENT_TOKEN=<token-aus-dem-dashboard> \
+RESTIC_PASSWORD=<dein-backup-passwort> \
+RESTIC_REPO=/mnt/nas/backups \
+bash <(curl -fsSL http://192.168.1.xxx:8080/scripts/install-agent.sh)
+```
+
+### Schritt 5 — Agent installieren (Windows)
+
+```powershell
+# Agent herunterladen
+Invoke-WebRequest "http://192.168.1.xxx:8080/downloads/agent/v0.1.0/windows-amd64" `
+  -OutFile opensourcebackup-agent.exe
+
+# Token aus der Web-UI (Agents-Seite → Enroll Agent → Schritt 4)
+$env:CONTROL_PLANE_URL  = "http://192.168.1.xxx:8080"
+$env:ENROLLMENT_TOKEN   = "<token>"
+$env:RESTIC_PASSWORD    = "<backup-passwort>"
+$env:RESTIC_REPO        = "Z:\OpenSourceBackup"  # NAS-Pfad
+.\opensourcebackup-agent.exe
+```
+
+### Alternative: Direkt auf Proxmox-Host
+
+Das Script läuft auch direkt auf dem Proxmox-Host (Debian 12), ist aber für Produktion nicht empfohlen (teilt das OS mit Proxmox).
+
+```bash
+# Auf dem Proxmox-Host als root:
+curl -fsSL \
+  https://raw.githubusercontent.com/cerberus8484/opensourcebackup/main/scripts/install-server.sh \
+  | bash
+```
+
+### Verwaltungs-Befehle
+
+```bash
+# Service-Status
+systemctl status opensourcebackup
+
+# Logs
+journalctl -u opensourcebackup -f
+
+# Neustart
+systemctl restart opensourcebackup
+
+# Datenbank-Container
+docker compose -f /opt/opensourcebackup/docker-compose.yml ps
+```
+
+---
+
+## Lokaler Start (Entwicklung)
 
 ```bash
 # 1. Control Plane + Datenbank
