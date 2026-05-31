@@ -126,14 +126,18 @@ services:
 EOF
 
 docker compose -f "$OSB_INSTALL_DIR/docker-compose.yml" up -d
-info "Waiting for PostgreSQL to be ready..."
-sleep 5
-for i in {1..20}; do
-  docker compose -f "$OSB_INSTALL_DIR/docker-compose.yml" exec -T postgres \
-    pg_isready -U "$DB_USER" &>/dev/null && break
+info "Waiting for PostgreSQL to be ready (up to 60s)..."
+READY=0
+for i in {1..30}; do
+  if docker compose -f "$OSB_INSTALL_DIR/docker-compose.yml" exec -T postgres \
+      pg_isready -U "$DB_USER" &>/dev/null 2>&1; then
+    READY=1; break
+  fi
+  echo -n "."
   sleep 2
 done
-ok "PostgreSQL + Redis running"
+echo ""
+[ "$READY" -eq 1 ] && ok "PostgreSQL + Redis running" || die "PostgreSQL did not become ready in time. Check: docker compose -f $OSB_INSTALL_DIR/docker-compose.yml logs postgres"
 
 # ── Step 4: Download Server Binary ───────────────────────────────────────────
 

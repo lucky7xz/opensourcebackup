@@ -39,12 +39,20 @@ Proxmox VE
 Im Proxmox Shell oder über das Datacenter-Terminal:
 
 ```bash
-# Debian 12 Template herunterladen (einmalig)
+# Verfügbare Debian-Templates anzeigen
 pveam update
+pveam available | grep debian
+
+# Template herunterladen (Name je nach Proxmox-Version prüfen!)
 pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+# Bei Fehler: pveam available | grep debian  → richtigen Namen nehmen
+
+# Template-Name automatisch ermitteln
+TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -1)
+echo "Verwende Template: $TEMPLATE"
 
 # LXC erstellen
-pct create 200 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+pct create 200 $TEMPLATE \
   --hostname opensourcebackup \
   --memory 2048 \
   --cores 2 \
