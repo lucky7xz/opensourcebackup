@@ -41,6 +41,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("PUT /v1/agent/heartbeat", h.handleAgentHeartbeat)
 	agentMux.HandleFunc("GET /v1/agent/jobs", h.listAgentJobs)
+	// Retention
+	agentMux.HandleFunc("GET  /v1/agent/retention/jobs", h.handleListAgentRetentionJobs)
+	agentMux.HandleFunc("POST /v1/agent/retention/validate", h.handleRetentionValidate)
+	agentMux.HandleFunc("PUT  /v1/agent/retention/jobs/{id}/complete", h.handleCompleteRetentionJob)
+	agentMux.HandleFunc("PUT  /v1/agent/retention/jobs/{id}/fail", h.handleFailRetentionJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/start", h.startAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/complete", h.completeAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/fail", h.failAgentJob)

@@ -27,6 +27,24 @@ type BackupRepository struct {
 	CreatedAt         time.Time
 }
 
+// RetentionPlan holds the restic-compatible keep rules for a policy.
+// All zero values mean "no limit" for that dimension.
+// The safety rule (never delete the last restore-tested snapshot) is enforced
+// by the control plane during retention job validation — independent of these values.
+type RetentionPlan struct {
+	KeepLast    int `json:"keep_last,omitempty"`
+	KeepDaily   int `json:"keep_daily,omitempty"`
+	KeepWeekly  int `json:"keep_weekly,omitempty"`
+	KeepMonthly int `json:"keep_monthly,omitempty"`
+	KeepYearly  int `json:"keep_yearly,omitempty"`
+}
+
+// HasRules reports whether any keep rule is configured.
+func (r RetentionPlan) HasRules() bool {
+	return r.KeepLast > 0 || r.KeepDaily > 0 || r.KeepWeekly > 0 ||
+		r.KeepMonthly > 0 || r.KeepYearly > 0
+}
+
 type BackupPolicy struct {
 	ID           uuid.UUID
 	Name         string
@@ -34,12 +52,18 @@ type BackupPolicy struct {
 	Excludes     []string
 	Schedule     *string
 	Retention    map[string]any
+	RetentionPlan RetentionPlan  // typed keep rules — sourced from dedicated columns
 	Engine       string
 	PreHooks     []string
 	PostHooks    []string
 	RepositoryID *uuid.UUID // which repository this policy backs up to
 	CreatedAt    time.Time
 }
+
+const (
+	JobTypeBackup    = "backup"
+	JobTypeRetention = "retention"
+)
 
 // RestoreTest records the result of verifying a snapshot can be restored.
 type RestoreTest struct {
@@ -64,6 +88,7 @@ type BackupJob struct {
 	ID            uuid.UUID
 	SystemID      uuid.UUID
 	PolicyID      uuid.UUID
+	Type          string     // "backup" | "retention" — see JobTypeBackup / JobTypeRetention
 	StartedAt     *time.Time
 	FinishedAt    *time.Time
 	Status        string

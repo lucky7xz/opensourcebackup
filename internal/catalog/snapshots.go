@@ -15,6 +15,9 @@ type SnapshotStore interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*Snapshot, error)
 	List(ctx context.Context) ([]Snapshot, error)
 	ListByJobID(ctx context.Context, jobID uuid.UUID) ([]Snapshot, error)
+	// ListBySystem returns all snapshots created by jobs belonging to this system.
+	// Used by the retention safety check to determine restore-test coverage.
+	ListBySystem(ctx context.Context, systemID uuid.UUID) ([]Snapshot, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -75,6 +78,18 @@ func (s *pgSnapshotStore) ListByJobID(ctx context.Context, jobID uuid.UUID) ([]S
 		       hostname, paths, checksum_status
 		FROM snapshots WHERE job_id = $1 ORDER BY created_at DESC`,
 		pgtype.UUID{Bytes: jobID, Valid: true},
+	)
+}
+
+func (s *pgSnapshotStore) ListBySystem(ctx context.Context, systemID uuid.UUID) ([]Snapshot, error) {
+	return s.querySnapshots(ctx, `
+		SELECT sn.id, sn.job_id, sn.engine_snapshot_id, sn.repository_id, sn.created_at,
+		       sn.hostname, sn.paths, sn.checksum_status
+		FROM snapshots sn
+		JOIN backup_jobs j ON j.id = sn.job_id
+		WHERE j.system_id = $1
+		ORDER BY sn.created_at DESC`,
+		pgtype.UUID{Bytes: systemID, Valid: true},
 	)
 }
 
