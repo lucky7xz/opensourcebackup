@@ -38,18 +38,31 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	cf, _ := os.Create("certs/dev.crt")
+	cf, err := os.Create("certs/dev.crt")
+	if err != nil {
+		panic(err)
+	}
 	if err := pem.Encode(cf, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
 		panic(err)
 	}
-	cf.Close()
+	if err := cf.Close(); err != nil {
+		panic(err)
+	}
 
-	kf, _ := os.Create("certs/dev.key")
-	kb, _ := x509.MarshalECPrivateKey(key)
+	kf, err := os.Create("certs/dev.key")
+	if err != nil {
+		panic(err)
+	}
+	kb, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		panic(err)
+	}
 	if err := pem.Encode(kf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}); err != nil {
 		panic(err)
 	}
-	kf.Close()
+	if err := kf.Close(); err != nil {
+		panic(err)
+	}
 
 	println("✓ certs/dev.crt  — TLS certificate (valid 365 days, localhost + 127.0.0.1)")
 	println("✓ certs/dev.key  — private key (keep secret, in .gitignore)")

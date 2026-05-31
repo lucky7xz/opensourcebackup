@@ -24,6 +24,8 @@ type ControlPlaneClient interface {
 	StartJob(ctx context.Context, jobID uuid.UUID) error
 	CompleteJob(ctx context.Context, jobID uuid.UUID, snapshotID string, bytesUploaded int64, paths []string) error
 	FailJob(ctx context.Context, jobID uuid.UUID, reason string) error
+	// Repository lookup (agent reads location from policy)
+	GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error)
 	// Restore tests
 	ClaimNextRestoreTest(ctx context.Context) (*catalog.RestoreTest, error)
 	GetSnapshot(ctx context.Context, id uuid.UUID) (*catalog.Snapshot, error)
@@ -177,14 +179,32 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 		return
 	}
 
+	// Fetch the repository to get the actual backup destination (Location).
+	// This allows each policy to target a different repo — NAS, S3, local path, etc.
+	repo, err := a.cp.GetRepository(ctx, *policy.RepositoryID)
+	if err != nil {
+		log.Error("could not load repository", "error", err)
+		a.doFail(ctx, log, job.ID, fmt.Sprintf("repository lookup: %s", err))
+		return
+	}
+	// Use policy repository location; fall back to agent env var if empty.
+	repoLocation := repo.Location
+	if repoLocation == "" {
+		repoLocation = a.cfg.ResticRepo
+	}
+
 	if err := a.cp.StartJob(ctx, job.ID); err != nil {
 		log.Error("mark job running failed", "error", err)
 		return
 	}
-	log.Info("job started", "engine", policy.Engine, "includes", policy.Includes)
+	log.Info("job started",
+		"engine", policy.Engine,
+		"includes", policy.Includes,
+		"repository", repoLocation,
+	)
 
 	result, err := a.runner.Backup(ctx, restic.BackupOptions{
-		Repo:     a.cfg.ResticRepo,
+		Repo:     repoLocation,
 		Password: a.cfg.ResticPassword,
 		Includes: policy.Includes,
 		Excludes: policy.Excludes,

@@ -101,6 +101,16 @@ func (c *Client) FailJob(ctx context.Context, jobID uuid.UUID, reason string) er
 	return nil
 }
 
+// GetRepository returns the repository with the given ID.
+func (c *Client) GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error) {
+	url := fmt.Sprintf("%s/v1/repositories/%s", c.baseURL, id)
+	var r catalog.BackupRepository
+	if err := c.get(ctx, url, &r); err != nil {
+		return nil, fmt.Errorf("get repository %s: %w", id, err)
+	}
+	return &r, nil
+}
+
 // ClaimNextRestoreTest claims the next pending restore test for this system.
 func (c *Client) ClaimNextRestoreTest(ctx context.Context) (*catalog.RestoreTest, error) {
 	var tests []catalog.RestoreTest

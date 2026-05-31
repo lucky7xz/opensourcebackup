@@ -59,6 +59,10 @@ func (s *stubCP) FailJob(_ context.Context, id uuid.UUID, reason string) error {
 	return nil
 }
 
+func (s *stubCP) GetRepository(_ context.Context, _ uuid.UUID) (*catalog.BackupRepository, error) {
+	return &catalog.BackupRepository{Type: "restic", Location: "C:/tmp/backup-repo"}, nil
+}
+
 func (s *stubCP) ClaimNextRestoreTest(_ context.Context) (*catalog.RestoreTest, error) {
 	return nil, catalog.ErrNotFound
 }
@@ -201,6 +205,9 @@ func (f *failOnceCP) CompleteJob(ctx context.Context, id uuid.UUID, s string, b 
 }
 func (f *failOnceCP) FailJob(ctx context.Context, id uuid.UUID, r string) error {
 	return f.inner.FailJob(ctx, id, r)
+}
+func (f *failOnceCP) GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error) {
+	return f.inner.GetRepository(ctx, id)
 }
 func (f *failOnceCP) ClaimNextRestoreTest(ctx context.Context) (*catalog.RestoreTest, error) {
 	return f.inner.ClaimNextRestoreTest(ctx)
