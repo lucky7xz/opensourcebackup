@@ -1,0 +1,136 @@
+# ==============================================================================
+# OpenSourceBackup — Prometheus Alert Rules
+#
+# Prepared rules — not all may fire immediately depending on your setup.
+# Adjust thresholds to your SLAs.
+# ==============================================================================
+
+groups:
+  - name: opensourcebackup.backup
+    interval: 1m
+    rules:
+
+      # A backup job failed in the last 24 hours
+      - alert: BackupJobFailed
+        expr: opensourcebackup_jobs_last_24h_total{status="failed"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backup job failed"
+          description: >
+            {{ $value }} backup job(s) failed in the last 24 hours.
+            Check the Jobs page in the OpenSourceBackup dashboard.
+
+      # High overall backup failure rate
+      - alert: BackupFailureRateHigh
+        expr: >
+          opensourcebackup_jobs_total{status="failed"} /
+          (opensourcebackup_jobs_total{status="success"} + opensourcebackup_jobs_total{status="failed"} + 0.001)
+          > 0.20
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup failure rate above 20%"
+          description: >
+            More than 20% of all backup jobs have failed.
+            Immediate investigation required.
+
+  - name: opensourcebackup.restore
+    interval: 1m
+    rules:
+
+      # Less than 80% of snapshots are restore-verified
+      - alert: RestoreVerificationLow
+        expr: opensourcebackup_restore_verified_ratio < 0.80
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Restore verification below 80%"
+          description: >
+            Only {{ humanizePercentage $value }} of snapshots have been
+            verified through a restore test. Schedule restore tests in
+            the OpenSourceBackup dashboard.
+
+      # No snapshots have ever been restore-tested
+      - alert: NoRestoreTestsConfigured
+        expr: opensourcebackup_restore_verified_ratio == 0 and opensourcebackup_snapshots_total > 0
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "No restore tests configured"
+          description: >
+            {{ $value | humanize }} snapshots exist but none have been
+            restore-tested. Data recoverability is unproven.
+            Configure restore tests in the OpenSourceBackup dashboard.
+
+      # A restore test failed
+      - alert: RestoreTestFailed
+        expr: opensourcebackup_restore_tests_total{status="failed"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Restore test failed"
+          description: >
+            {{ $value }} restore test(s) have failed. This means some
+            backup snapshots cannot be restored. Investigate immediately.
+
+  - name: opensourcebackup.agents
+    interval: 1m
+    rules:
+
+      # One or more agents have been offline for more than 15 minutes
+      - alert: AgentOffline
+        expr: opensourcebackup_agents_offline_total > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} agent(s) offline"
+          description: >
+            {{ $value }} agent(s) have not sent a heartbeat in more than
+            15 minutes. Check the Agents / Systems page in the dashboard.
+
+      # All agents are offline — control plane may have lost connectivity
+      - alert: AllAgentsOffline
+        expr: opensourcebackup_systems_total > 0 and opensourcebackup_agents_online_total == 0 and opensourcebackup_agents_idle_total == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "All agents offline"
+          description: >
+            No agents have sent a heartbeat in the last 15 minutes.
+            The control plane may have lost network connectivity to all systems.
+
+  - name: opensourcebackup.health
+    interval: 5m
+    rules:
+
+      # Recovery Score dropped below 75 (Good threshold)
+      - alert: RecoveryScoreLow
+        expr: opensourcebackup_recovery_score < 75
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Recovery Score below 75 (currently {{ $value }})"
+          description: >
+            The overall recovery readiness score is {{ $value }}/100.
+            Check the dashboard for details on what is reducing the score.
+
+      # Recovery Score is at risk (below 55 = 'At Risk')
+      - alert: RecoveryScoreAtRisk
+        expr: opensourcebackup_recovery_score < 55
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Recovery Score at risk ({{ $value }}/100)"
+          description: >
+            The recovery score has dropped to {{ $value }}/100 — classified as 'At Risk'.
+            Data recoverability is seriously compromised. Investigate immediately.

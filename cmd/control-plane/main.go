@@ -13,6 +13,7 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	"github.com/cerberus8484/opensourcebackup/internal/metrics"
 	"github.com/cerberus8484/opensourcebackup/internal/scheduler"
 	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
@@ -101,6 +102,20 @@ func main() {
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
+
+	// ── Prometheus /metrics ───────────────────────────────────────────────────
+	// Served on the same port as the API — no separate metrics port.
+	// The endpoint is unauthenticated by design: Prometheus scrapers typically
+	// run inside the same network. Restrict access at the network/firewall level
+	// if metrics should not be publicly accessible.
+	// Same stores as the API — no shadow data, no duplication.
+	metricsHandler := metrics.NewHandler(metrics.Stores{
+		Systems:      catalog.NewSystemStore(db),
+		Jobs:         catalog.NewJobStore(db),
+		Snapshots:    catalog.NewSnapshotStore(db),
+		RestoreTests: catalog.NewRestoreTestStore(db),
+	}, logger)
+	mux.Handle("/metrics", metricsHandler)
 
 	corsOrigin := os.Getenv("CORS_ORIGIN")
 	if corsOrigin == "" {
