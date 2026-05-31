@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 
 export interface ActivityBucket {
   hour:          string
@@ -71,7 +71,6 @@ export function ActivityChart({ data, height = 140 }: Props) {
           const bH   = (d.backups / maxVal) * chartH
           const rtH  = (d.restore_tests / maxVal) * chartH
           const fH   = (d.failures / maxVal) * chartH
-          const totalH = bH + rtH + fH
           const baseY  = toY(d.backups + d.restore_tests + d.failures)
 
           return (
