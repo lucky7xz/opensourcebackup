@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,9 @@ type SystemStore interface {
 	List(ctx context.Context) ([]System, error)
 	Update(ctx context.Context, s *System) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	// UpdateLastSeen stamps last_seen = seenAt for the given system.
+	// Called on every agent heartbeat — intentionally lightweight (single-column UPDATE).
+	UpdateLastSeen(ctx context.Context, id uuid.UUID, seenAt time.Time) error
 }
 
 type pgSystemStore struct {
@@ -104,6 +108,20 @@ func (r *pgSystemStore) Update(ctx context.Context, s *System) error {
 func (r *pgSystemStore) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.db.pool.Exec(ctx, `DELETE FROM systems WHERE id = $1`,
 		pgtype.UUID{Bytes: id, Valid: true},
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *pgSystemStore) UpdateLastSeen(ctx context.Context, id uuid.UUID, seenAt time.Time) error {
+	tag, err := r.db.pool.Exec(ctx,
+		`UPDATE systems SET last_seen = $1 WHERE id = $2`,
+		seenAt, pgtype.UUID{Bytes: id, Valid: true},
 	)
 	if err != nil {
 		return err

@@ -39,6 +39,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Agent-only routes (protected by AgentAuth middleware)
 	agentMux := http.NewServeMux()
+	agentMux.HandleFunc("PUT /v1/agent/heartbeat", h.handleAgentHeartbeat)
 	agentMux.HandleFunc("GET /v1/agent/jobs", h.listAgentJobs)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/start", h.startAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/complete", h.completeAgentJob)

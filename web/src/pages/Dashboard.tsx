@@ -138,6 +138,37 @@ export function Dashboard() {
     failedSnapshots:  failedOnlySnaps.length,
   })
 
+  // ── Agent activity ────────────────────────────────────────────────────────
+  // Thresholds: Online ≤ 2min · Idle ≤ 15min · Offline > 15min or never seen
+  const MS_ONLINE  = 2  * 60 * 1000
+  const MS_IDLE    = 15 * 60 * 1000
+
+  function agentStatus(sys: { LastSeen?: string }): 'online' | 'idle' | 'offline' {
+    if (!sys.LastSeen) return 'offline'
+    const age = now - new Date(sys.LastSeen).getTime()
+    if (age <= MS_ONLINE) return 'online'
+    if (age <= MS_IDLE)   return 'idle'
+    return 'offline'
+  }
+
+  const onlineSystems  = systems.filter(s => agentStatus(s) === 'online')
+  const idleSystems    = systems.filter(s => agentStatus(s) === 'idle')
+  const offlineSystems = systems.filter(s => agentStatus(s) === 'offline')
+
+  const agentDonut = [
+    { value: onlineSystems.length,  color: 'var(--success)',  label: 'Online'  },
+    { value: idleSystems.length,    color: 'var(--warning)',  label: 'Idle'    },
+    { value: offlineSystems.length, color: 'var(--error)',    label: 'Offline' },
+  ]
+
+  // Last-seen list — show all, sorted by most recent first
+  const systemsByLastSeen = [...systems].sort((a, b) => {
+    if (!a.LastSeen && !b.LastSeen) return 0
+    if (!a.LastSeen) return 1
+    if (!b.LastSeen) return -1
+    return new Date(b.LastSeen).getTime() - new Date(a.LastSeen).getTime()
+  })
+
   // Recent jobs
   const recentJobs = [...jobs]
     .sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime())
@@ -342,6 +373,70 @@ export function Dashboard() {
         </div>
 
       </div>
+
+      {/* ── Agent Activity ─────────────────────────────────────────────────── */}
+      <div style={s.agentRow}>
+
+        {/* Donut */}
+        <div style={{ ...s.card, display: 'flex', gap: 20, alignItems: 'center' }}>
+          <DonutChart
+            segments={agentDonut}
+            size={100}
+            thickness={15}
+            center={
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+                  {systems.length}
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Agents
+                </div>
+              </div>
+            }
+          />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              Agent Activity
+            </div>
+            <DonutLegend segments={agentDonut} total={systems.length} />
+            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 8, fontStyle: 'italic' }}>
+              Online ≤ 2min · Idle ≤ 15min · Offline = no heartbeat
+            </div>
+          </div>
+        </div>
+
+        {/* Last Seen list */}
+        <div style={{ ...s.card, flex: 2 }}>
+          <div style={{ ...s.cardHeader, paddingLeft: 0, paddingTop: 0 }}>
+            <span style={s.cardTitle}>Last Seen</span>
+          </div>
+          {systems.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', padding: '8px 0' }}>
+              No agents enrolled yet.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+              {systemsByLastSeen.slice(0, 8).map(sys => {
+                const st = agentStatus(sys)
+                const dot = st === 'online'  ? 'var(--success)'
+                          : st === 'idle'    ? 'var(--warning)'
+                          : 'var(--error)'
+                const age = sys.LastSeen
+                  ? timeAgo(sys.LastSeen)
+                  : 'never'
+                return (
+                  <div key={sys.ID} style={s.agentRow2}>
+                    <span style={{ ...s.statusDot, background: dot, boxShadow: st === 'online' ? `0 0 5px ${dot}` : 'none' }} />
+                    <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{sys.Hostname}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{age}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+      </div>
     </div>
   )
 }
@@ -451,4 +546,18 @@ const s: Record<string, React.CSSProperties> = {
 
   storageTotal: { fontSize: 26, fontWeight: 800, color: 'var(--text)', marginBottom: 2 },
   divider:      { height: 1, background: 'var(--border)', margin: '12px 0' },
+
+  agentRow: {
+    display: 'grid',
+    gridTemplateColumns: '300px 1fr',
+    gap: 16,
+    marginTop: 16,
+  },
+  agentRow2: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  statusDot: {
+    width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+  },
 }

@@ -10,6 +10,9 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
+// ensure time import is used
+var _ = time.Now
+
 // stubEnrollmentTokenStore — in-memory for tests.
 type stubEnrollmentTokenStore struct{}
 
@@ -91,6 +94,13 @@ func (s *stubSystemStore) Delete(_ context.Context, id uuid.UUID) error {
 		return catalog.ErrNotFound
 	}
 	delete(s.systems, id)
+	return nil
+}
+
+func (s *stubSystemStore) UpdateLastSeen(_ context.Context, id uuid.UUID, _ time.Time) error {
+	if _, ok := s.systems[id]; !ok {
+		return catalog.ErrNotFound
+	}
 	return nil
 }
 

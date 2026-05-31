@@ -48,6 +48,16 @@ func New(baseURL, token string, skipTLSVerify ...bool) *Client {
 	}
 }
 
+// Heartbeat stamps last_seen on the control plane for the authenticated system.
+// Should be called on every poll cycle.
+// Returns ErrUnauthorized if the token is revoked.
+func (c *Client) Heartbeat(ctx context.Context) error {
+	if err := c.put(ctx, c.baseURL+"/v1/agent/heartbeat", nil); err != nil {
+		return fmt.Errorf("heartbeat: %w", err)
+	}
+	return nil
+}
+
 // ListPendingJobs returns pending jobs for the authenticated system.
 // The system is identified by the bearer token — no system_id parameter needed.
 func (c *Client) ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error) {

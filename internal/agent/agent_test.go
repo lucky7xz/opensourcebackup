@@ -33,6 +33,8 @@ type failRecord struct {
 	reason string
 }
 
+func (s *stubCP) Heartbeat(_ context.Context) error { return nil }
+
 func (s *stubCP) ListPendingJobs(_ context.Context) ([]catalog.BackupJob, error) {
 	return s.jobs, s.listErr
 }
@@ -182,10 +184,12 @@ func TestAgent_ContinuesPollOnTransientError(t *testing.T) {
 }
 
 type failOnceCP struct {
-	inner     *stubCP
-	failCount int
-	calls     int
+	inner      *stubCP
+	failCount  int
+	calls      int
 }
+
+func (f *failOnceCP) Heartbeat(_ context.Context) error { return nil }
 
 func (f *failOnceCP) ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error) {
 	f.calls++
