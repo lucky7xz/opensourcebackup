@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,10 +116,16 @@ func (h *Handler) handleGDPRPurge(w http.ResponseWriter, r *http.Request) {
 // Returns the audit log for transparency and compliance review.
 func (h *Handler) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	rt := audit.ResourceType(q.Get("resource_type"))
+	rt  := audit.ResourceType(q.Get("resource_type"))
 	rid := q.Get("resource_id")
+	limit := 200
+	if v := q.Get("limit"); v != "" {
+		if n, err2 := strconv.Atoi(v); err2 == nil && n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
 
-	entries, err := h.auditStore.List(r.Context(), rt, rid, 200)
+	entries, err := h.auditStore.List(r.Context(), rt, rid, limit)
 	if err != nil {
 		h.log.Error("audit list failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "could not load audit log")

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth, type HealthScore } from '../api'
+import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth, type HealthScore, type ActivityBucket } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
 import { DonutChart, DonutLegend } from '../components/DonutChart'
+import { ActivityChart, ActivityLegend } from '../components/ActivityChart'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -12,10 +13,13 @@ export function Dashboard() {
   const [jobs,         setJobs]         = useState<BackupJob[]>([])
   const [snapshots,    setSnapshots]    = useState<Snapshot[]>([])
   const [restoreTests, setRestoreTests] = useState<RestoreTest[]>([])
-  const [repos,        setRepos]        = useState<BackupRepository[]>([])
-  const [repoHealth,   setRepoHealth]   = useState<RepositoryHealth[]>([])
-  const [healthScore,  setHealthScore]  = useState<HealthScore|null>(null)
-  const [loading,      setLoading]      = useState(true)
+  const [repos,       setRepos]       = useState<BackupRepository[]>([])
+  const [repoHealth,  setRepoHealth]  = useState<RepositoryHealth[]>([])
+  const [healthScore, setHealthScore] = useState<HealthScore|null>(null)
+  const [activity,    setActivity]    = useState<ActivityBucket[]>([])
+  const [alerts,      setAlerts]      = useState<any[]>([])
+  const [evidence,    setEvidence]    = useState<any[]>([])
+  const [loading,     setLoading]     = useState(true)
 
   useEffect(() => {
     Promise.all([
@@ -23,9 +27,15 @@ export function Dashboard() {
       api.repositories(),
       api.repositoryHealth().catch(() => [] as RepositoryHealth[]),
       api.healthScore().catch(() => null),
-    ]).then(([s, j, sn, rt, r, rh, hs]) => {
+      api.healthActivity(24).catch(() => []),
+      api.healthAlerts().catch(() => ({ alerts: [], summary: {} })),
+      api.auditLog(6).catch(() => []),
+    ]).then(([s, j, sn, rt, r, rh, hs, act, al, ev]) => {
       setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt)
       setRepos(r); setRepoHealth(rh); setHealthScore(hs)
+      setActivity(act as ActivityBucket[])
+      setAlerts((al as any)?.alerts ?? [])
+      setEvidence(ev as any[])
     }).finally(() => setLoading(false))
   }, [])
 
@@ -368,6 +378,91 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* ── Activity Chart + Alerts + Evidence ────────────────────────────── */}
+      <div style={s.threeCol}>
+
+        {/* Backup & Restore Activity Chart */}
+        <div style={{ ...s.card, gridColumn: 'span 2' }}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Backup & Restore Activity (24h)</span>
+            <ActivityLegend />
+          </div>
+          <ActivityChart data={activity} height={150} />
+          <div style={s.activityStats}>
+            <span>Backups: <strong style={{ color: '#00d4ff' }}>{activity.reduce((a, b) => a + b.backups, 0)}</strong></span>
+            <span>Restore Tests: <strong style={{ color: '#00ff88' }}>{activity.reduce((a, b) => a + b.restore_tests, 0)}</strong></span>
+            <span>Failures: <strong style={{ color: '#ef4444' }}>{activity.reduce((a, b) => a + b.failures, 0)}</strong></span>
+          </div>
+        </div>
+
+        {/* Alerts Preview */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Alerts</span>
+            <button onClick={() => navigate('/alerts')} style={s.viewAll}>View all →</button>
+          </div>
+          {alerts.length === 0 ? (
+            <div style={s.panelEmpty}>
+              <span style={{ fontSize: 18 }}>✅</span>
+              <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>All checks passed</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              {alerts.slice(0, 4).map((a: any) => (
+                <div key={a.code} style={s.alertPreviewItem}>
+                  <span style={{ fontSize: 14 }}>
+                    {a.severity === 'critical' ? '🔴' : a.severity === 'warning' ? '⚠️' : 'ℹ️'}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {a.title}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 1 }}>
+                      {a.category} · −{a.points} pts
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {alerts.length > 4 && (
+                <button onClick={() => navigate('/alerts')} style={s.viewAll}>
+                  +{alerts.length - 4} more →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── Recent Evidence ────────────────────────────────────────────────── */}
+      {evidence.length > 0 && (
+        <div style={{ ...s.card, marginTop: 16 }}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Recent Evidence</span>
+            <button onClick={() => navigate('/evidence')} style={s.viewAll}>View all →</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {evidence.map((e: any) => (
+              <div key={e.ID} style={s.evidenceItem}>
+                <span style={{ fontSize: 12, color: '#00ff88' }}>✓</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={s.mono}>{e.Action}</span>
+                  {e.ResourceType && (
+                    <span style={{ fontSize: 11, color: 'var(--text-dim)', marginLeft: 8 }}>
+                      {e.ResourceType}
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--text-dim)', flexShrink: 0 }}>
+                  {timeAgo(e.Timestamp)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Agent Activity ─────────────────────────────────────────────────── */}
       <div style={s.agentRow}>
 
@@ -541,6 +636,30 @@ const s: Record<string, React.CSSProperties> = {
   storageTotal: { fontSize: 26, fontWeight: 800, color: 'var(--text)', marginBottom: 2 },
   divider:      { height: 1, background: 'var(--border)', margin: '12px 0' },
 
+  threeCol: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: 16,
+    marginTop: 16,
+  },
+  activityStats: {
+    display: 'flex', gap: 20, padding: '8px 20px 12px',
+    fontSize: 12, color: 'var(--text-dim)',
+  },
+  panelEmpty: {
+    display: 'flex', flexDirection: 'column' as const, alignItems: 'center',
+    justifyContent: 'center', gap: 6, padding: '20px 0', minHeight: 80,
+  },
+  alertPreviewItem: {
+    display: 'flex', alignItems: 'flex-start', gap: 8,
+    padding: '6px 8px', borderRadius: 6,
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.05)',
+  },
+  evidenceItem: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
   agentRow: {
     display: 'grid',
     gridTemplateColumns: '300px 1fr',
