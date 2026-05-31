@@ -280,50 +280,62 @@ sleep 3
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 LOCAL_IP=$(hostname -I | awk '{print $1}')
+WEB_UI_URL="http://${LOCAL_IP}:${OSB_PORT}/ui/"
+API_URL="http://${LOCAL_IP}:${OSB_PORT}"
 
-# Save credentials file
-mkdir -p /etc/opensourcebackup
+# Save credentials file — KEEP SECURE
 cat > /root/opensourcebackup-credentials.txt <<CREDS
-# ============================================================
-# OpenSourceBackup — Installation Credentials
-# Installed: $(date)
-# KEEP THIS FILE SECURE — contains database password
-# ============================================================
+==============================================================
+  OpenSourceBackup — Zugangsdaten / Access Credentials
+  Installiert: $(date)
+  DIESE DATEI SICHER AUFBEWAHREN
+==============================================================
 
-# Web UI + API
-CONTROL_PLANE_URL=http://${LOCAL_IP}:${OSB_PORT}
-WEB_UI=http://${LOCAL_IP}:${OSB_PORT}/ui/
+  Web Dashboard URL : http://${LOCAL_IP}:${OSB_PORT}/ui/
+  API URL           : http://${LOCAL_IP}:${OSB_PORT}
 
-# Database
-DB_HOST=127.0.0.1:5432
-DB_USER=${DB_USER}
-DB_PASSWORD=${DB_PASSWORD}
-DB_NAME=${DB_NAME}
+  Benutzername      : (noch nicht erforderlich — kommt in Release 2)
+  Passwort          : (noch nicht erforderlich — kommt in Release 2)
 
-# Note: No default username/password yet — Auth (RBAC) comes in a later release.
-# The API is currently accessible without login (for internal/trusted networks).
-# DO NOT expose port ${OSB_PORT} to the internet without TLS + Auth.
+  Hinweis: Aktuell kein Login nötig.
+  Nur im internen Netzwerk (Proxmox LAN) verwenden.
+  Nicht ohne Auth + TLS ins Internet exposen.
+
+  Datenbank
+  Host     : 127.0.0.1:5432
+  User     : ${DB_USER}
+  Passwort : ${DB_PASSWORD}
+  DB-Name  : ${DB_NAME}
+
+==============================================================
 CREDS
 chmod 600 /root/opensourcebackup-credentials.txt
 
+# ── Abschluss-Ausgabe ─────────────────────────────────────────────────────────
+
 echo ""
-echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║           ✓  OpenSourceBackup — Installation Complete        ║${NC}"
-echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}║   Web Dashboard:  ${CYAN}http://${LOCAL_IP}:${OSB_PORT}/ui/${GREEN}                  ║${NC}"
-echo -e "${GREEN}║   API:            ${CYAN}http://${LOCAL_IP}:${OSB_PORT}/health${GREEN}               ║${NC}"
-echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${GREEN}║   Login                                                      ║${NC}"
-echo -e "${GREEN}║   Username:  ${YELLOW}(not required yet — Auth in next release)${GREEN}     ║${NC}"
-echo -e "${GREEN}║   Password:  ${YELLOW}(not required yet)${GREEN}                            ║${NC}"
-echo -e "${GREEN}║                                                              ║${NC}"
-echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${GREEN}║   ⚠  IMPORTANT: API has no auth yet                         ║${NC}"
-echo -e "${GREEN}║   Only use in trusted/private networks (Proxmox LAN)        ║${NC}"
-echo -e "${GREEN}║   Auth (RBAC + Login) comes in the next major release       ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║       ✓  OpenSourceBackup erfolgreich installiert!               ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║                                                                  ║${NC}"
+echo -e "${GREEN}║   🌐  WEB DASHBOARD                                              ║${NC}"
+echo -e "${GREEN}║       ${CYAN}${WEB_UI_URL}${GREEN}$(printf '%*s' $((48 - ${#WEB_UI_URL})) '')║${NC}"
+echo -e "${GREEN}║                                                                  ║${NC}"
+echo -e "${GREEN}║   🔑  ZUGANGSDATEN / LOGIN                                       ║${NC}"
+echo -e "${GREEN}║       Benutzername : ${YELLOW}(kein Login nötig — kommt in v2)${GREEN}          ║${NC}"
+echo -e "${GREEN}║       Passwort     : ${YELLOW}(kein Login nötig — kommt in v2)${GREEN}          ║${NC}"
+echo -e "${GREEN}║                                                                  ║${NC}"
+echo -e "${GREEN}║   🖥️  IP-ADRESSE                                                 ║${NC}"
+echo -e "${GREEN}║       ${CYAN}${LOCAL_IP}${GREEN}$(printf '%*s' $((55 - ${#LOCAL_IP})) '')║${NC}"
+echo -e "${GREEN}║                                                                  ║${NC}"
+echo -e "${GREEN}║   ⚙️  PORT                                                       ║${NC}"
+echo -e "${GREEN}║       ${CYAN}${OSB_PORT}${GREEN}$(printf '%*s' $((59 - ${#OSB_PORT})) '')║${NC}"
+echo -e "${GREEN}║                                                                  ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║   ⚠  Aktuell kein Login erforderlich.                            ║${NC}"
+echo -e "${GREEN}║      Nur im internen Netzwerk verwenden!                         ║${NC}"
+echo -e "${GREEN}║      Auth (RBAC + Login) kommt im nächsten Release.              ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  ${YELLOW}Next step — install the agent on a system to back up:${NC}"
 echo ""
