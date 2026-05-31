@@ -165,13 +165,17 @@ func main() {
 
 	// Middleware chain (outer → inner):
 	//   Timeout → Logging → RateLimit → WebAuth → CSRF → SecurityHeaders → CORS → BodyLimit → Recovery
+	// Auth is enabled only when credentials are configured.
+	// Without credentials = dev mode, all requests pass as admin (no login needed).
+	authEnabled := adminPass != "" || adminEmail != ""
+
 	httpHandler := api.Chain(mux,
 		api.Recovery(logger),
 		api.RequestBodyLimit(maxRequestBodyBytes),
 		api.CORS(corsOrigin),
 		api.SecurityHeadersCSP,
 		security.CSRFProtect,
-		api.RBACMiddleware(sessions, auditStore), // replaces old WebAuth
+		api.RBACMiddlewareWithAuth(sessions, auditStore, authEnabled),
 		security.RateLimit(globalLimiter),
 		api.Logging(logger),
 		api.Timeout(requestHandlerTimeout),
