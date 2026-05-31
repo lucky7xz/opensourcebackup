@@ -65,10 +65,10 @@ func TestSecurityHeaders_SetsAllRequiredHeaders(t *testing.T) {
 	required := map[string]string{
 		"X-Content-Type-Options":    "nosniff",
 		"X-Frame-Options":           "DENY",
-		"X-Xss-Protection":          "1; mode=block",
+		"X-Xss-Protection":          "0", // modern browsers: CSP is the real defence
 		"Referrer-Policy":           "strict-origin-when-cross-origin",
-		"Content-Security-Policy":   "default-src 'self'",
-		"Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+		"Content-Security-Policy":   "default-src 'none'",
+		"Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
 	}
 	for header, want := range required {
 		if got := rec.Header().Get(header); got != want {
