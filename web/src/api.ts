@@ -32,6 +32,7 @@ export interface System {
 }
 export type ImmutableMode = 'none' | 'object_lock' | 'worm' | 'append_only' | 'unknown'
 
+export interface ActivityBucket { hour: string; backups: number; restore_tests: number; failures: number }
 export interface ScoreDeduction { points: number; code: string; reason: string }
 export interface HealthScore {
   score:      number
@@ -92,6 +93,9 @@ export const api = {
   repositories:        () => get<BackupRepository[]>('/v1/repositories'),
   repositoryHealth:    () => get<RepositoryHealth[]>('/v1/repositories/health'),
   healthScore:         () => get<HealthScore>('/v1/health/score'),
+  healthActivity:      (hours = 24) => get<ActivityBucket[]>(`/v1/health/activity?hours=${hours}`),
+  healthAlerts:        () => get<{ alerts: any[]; summary: any }>('/v1/health/alerts'),
+  auditLog:            (limit = 5) => get<any[]>(`/v1/audit?limit=${limit}`),
   createRepository:    (r: Partial<BackupRepository> & { ImmutableMode?: ImmutableMode }) => post<BackupRepository>('/v1/repositories', r),
   deleteRepository:    (id: string) => del(`/v1/repositories/${id}`),
   policies:      () => get<BackupPolicy[]>('/v1/policies'),
