@@ -6,6 +6,16 @@ async function get<T>(path: string): Promise<T> {
   return res.json()
 }
 
+export async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${res.status}`)
+  return res.json()
+}
+
 export async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
@@ -60,7 +70,10 @@ export const api = {
   deleteRepository:   (id: string) => del(`/v1/repositories/${id}`),
   policies:      () => get<BackupPolicy[]>('/v1/policies'),
   createPolicy:  (p: Partial<BackupPolicy>) => post<BackupPolicy>('/v1/policies', p),
+  updatePolicy:  (id: string, p: Partial<BackupPolicy>) => put<BackupPolicy>(`/v1/policies/${id}`, p),
   deletePolicy:  (id: string) => del(`/v1/policies/${id}`),
+  updateSystem:      (id: string, s: Partial<System>) => put<System>(`/v1/systems/${id}`, s),
+  updateRepository:  (id: string, r: Partial<BackupRepository>) => put<BackupRepository>(`/v1/repositories/${id}`, r),
   jobs:         () => get<BackupJob[]>('/v1/jobs'),
   snapshots:      () => get<Snapshot[]>('/v1/snapshots'),
   restoreTests:   () => get<RestoreTest[]>('/v1/restore-tests'),

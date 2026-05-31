@@ -19,6 +19,9 @@ const sections = [
   { label: 'STORAGE', links: [
     { to:'/repositories', label:'Repositories',  icon:'▭' },
   ]},
+  { label: 'SYSTEM', links: [
+    { to:'/settings',     label:'Settings',      icon:'⚙' },
+  ]},
 ]
 
 export function Sidebar() {

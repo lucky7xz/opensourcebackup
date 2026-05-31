@@ -21,6 +21,7 @@ export function Policies() {
   const [repos,      setRepos]      = useState<BackupRepository[]>([])
   const [loading,    setLoading]    = useState(true)
   const [showForm,   setShowForm]   = useState(false)
+  const [editingId,  setEditingId]  = useState<string|null>(null) // null = create, id = update
   const [deleteFor,  setDeleteFor]  = useState<BackupPolicy|null>(null)
   const [saving,     setSaving]     = useState(false)
   const [err,        setErr]        = useState<string|null>(null)
@@ -57,7 +58,7 @@ export function Policies() {
     if (cleanIncludes.length === 0) { setErr('At least one include path is required.'); return }
     setSaving(true); setErr(null)
     try {
-      await api.createPolicy({
+      const data = {
         Name:         name.trim(),
         Engine:       engine,
         RepositoryID: repoID || undefined,
@@ -65,8 +66,13 @@ export function Policies() {
         Includes:     cleanIncludes,
         Excludes:     excludes.map(p => p.trim()).filter(Boolean),
         Retention:    { daily: Number(retDaily), weekly: Number(retWeekly), monthly: Number(retMonthly) },
-      })
-      setShowForm(false); resetForm(); await load()
+      }
+      if (editingId) {
+        await api.updatePolicy(editingId, data)
+      } else {
+        await api.createPolicy(data)
+      }
+      setShowForm(false); setEditingId(null); resetForm(); await load()
     } catch { setErr('Failed to save. Check all values.') }
     finally { setSaving(false) }
   }
@@ -89,7 +95,22 @@ export function Policies() {
               { header:'Repository', render:p => p.RepositoryID
                   ? <span style={s.mono}>{repos.find(r=>r.ID===p.RepositoryID)?.Location ?? p.RepositoryID.slice(0,8)+'…'}</span>
                   : <span style={s.warn}>⚠ no repository</span> },
-              { header:'', render:p => <button onClick={()=>setDeleteFor(p)} style={s.delBtn}>🗑</button>, width:'40px' },
+              { header:'', render:p => (
+                <div style={{display:'flex',gap:6}}>
+                  <button onClick={() => {
+                    setEditingId(p.ID); setShowForm(true)
+                    setName(p.Name); setEngine(p.Engine)
+                    setRepoID(p.RepositoryID??'')
+                    const sc = p.Schedule ?? ''
+                    const known = SCHEDULES.find(s=>s.value===sc)
+                    setSchedSel(known ? sc : (sc ? '__custom' : ''))
+                    setSchedCustom(sc)
+                    setIncludes(p.Includes?.length ? p.Includes : [''])
+                    setExcludes(p.Excludes ?? [])
+                  }} style={s.editBtn}>✏</button>
+                  <button onClick={()=>setDeleteFor(p)} style={s.delBtn}>🗑</button>
+                </div>
+              ), width:'70px' },
             ]}
             rows={policies} keyFn={p=>p.ID}
             empty="No policies yet. Click '+ New Policy' to create one."
@@ -98,7 +119,7 @@ export function Policies() {
       </Card>
 
       {showForm && (
-        <Modal title="New Backup Policy" onClose={()=>{setShowForm(false);resetForm()}}>
+        <Modal title={editingId ? 'Edit Policy' : 'New Backup Policy'} onClose={()=>{setShowForm(false);setEditingId(null);resetForm()}}>
           <div>
             <div style={s.row2}>
               <div style={s.field}>
@@ -178,9 +199,9 @@ export function Policies() {
             {err && <div style={s.errBox}>{err}</div>}
 
             <div style={s.actions}>
-              <button onClick={()=>{setShowForm(false);resetForm()}} style={s.cancelBtn}>Cancel</button>
+              <button onClick={()=>{setShowForm(false);setEditingId(null);resetForm()}} style={s.cancelBtn}>Cancel</button>
               <button onClick={save} disabled={saving} style={s.submitBtn}>
-                {saving?'Saving…':'✓ Create Policy'}
+                {saving ? 'Saving…' : editingId ? '✓ Save Changes' : '✓ Create Policy'}
               </button>
             </div>
           </div>
@@ -210,6 +231,7 @@ const s: Record<string,React.CSSProperties> = {
   path:      { fontFamily:'var(--font-mono)', fontSize:11, color:'var(--text-muted)' },
   dim:       { color:'var(--text-dim)', fontSize:12 },
   warn:      { color:'var(--warning)', fontSize:12 },
+  editBtn:   { padding:'3px 8px', borderRadius:5, background:'rgba(245,158,11,0.08)', color:'var(--warning)', border:'1px solid rgba(245,158,11,0.2)', fontSize:12, cursor:'pointer' },
   delBtn:    { padding:'3px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
   newBtn:    { padding:'7px 16px', borderRadius:6, background:'var(--accent)', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' },
   row2:      { display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:4 },

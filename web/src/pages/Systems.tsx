@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, post, timeAgo, type BackupJob, type BackupPolicy, type System } from '../api'
+import { put } from '../api'
 import { Card, SectionHeader } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
@@ -18,7 +19,12 @@ export function Systems() {
   const [policies, setPolicies] = useState<BackupPolicy[]>([])
   const [loading,  setLoading]  = useState(true)
   const [runFor,      setRunFor]      = useState<System|null>(null)
+  const [editFor,     setEditFor]     = useState<System|null>(null)
   const [deleteFor,   setDeleteFor]   = useState<System|null>(null)
+  const [editHostname,setEditHostname]= useState('')
+  const [editOS,      setEditOS]      = useState('')
+  const [editRisk,    setEditRisk]    = useState('standard')
+  const [editSaving,  setEditSaving]  = useState(false)
   const [showNewSys,  setShowNewSys]  = useState(false)
   const [newHostname, setNewHostname] = useState('')
   const [newOS,       setNewOS]       = useState('')
@@ -36,6 +42,16 @@ export function Systems() {
     .finally(() => setLoading(false))
 
   useEffect(() => { load() }, [])
+
+  async function saveEdit() {
+    if (!editFor) return
+    setEditSaving(true)
+    try {
+      await put<System>(`/v1/systems/${editFor.ID}`, { ...editFor, Hostname: editHostname, OS: editOS || undefined, RiskClass: editRisk })
+      setEditFor(null); await load()
+    } catch { /* ignore */ }
+    finally { setEditSaving(false) }
+  }
 
   async function createSystem() {
     if (!newHostname.trim()) { setSaveErr('Hostname is required.'); return }
@@ -112,9 +128,10 @@ export function Systems() {
               { header:'',               render:sys=>(
                 <div style={{display:'flex',gap:6}}>
                   <button onClick={() => { setRunFor(sys); setSelPolicy('') }} style={s.runBtn}>▶ Run</button>
+                  <button onClick={() => { setEditFor(sys); setEditHostname(sys.Hostname); setEditOS(sys.OS??''); setEditRisk(sys.RiskClass||'standard') }} style={s.editBtn}>✏</button>
                   <button onClick={() => setDeleteFor(sys)} style={s.delBtn}>🗑</button>
                 </div>
-              ), width:'110px' },
+              ), width:'130px' },
             ]}
             rows={systems} keyFn={sys=>sys.ID}
             empty="No systems registered. Install the agent to get started."
@@ -155,6 +172,26 @@ export function Systems() {
             <button onClick={createSystem} disabled={saving || !newHostname.trim()} style={s.submitBtn}>
               {saving ? 'Registering…' : '✓ Register System'}
             </button>
+          </div>
+        </Modal>
+      )}
+
+      {editFor && (
+        <Modal title={`Edit ${editFor.Hostname}`} onClose={() => setEditFor(null)}>
+          <div style={s.field}><label style={s.flabel}>Hostname</label>
+            <input style={s.finput} value={editHostname} onChange={e=>setEditHostname(e.target.value)} /></div>
+          <div style={s.row2}>
+            <div style={s.field}><label style={s.flabel}>OS</label>
+              <input style={s.finput} value={editOS} onChange={e=>setEditOS(e.target.value)} placeholder="Ubuntu 22.04" /></div>
+            <div style={s.field}><label style={s.flabel}>Risk Class</label>
+              <select style={s.fselect} value={editRisk} onChange={e=>setEditRisk(e.target.value)}>
+                <option value="standard">Standard</option>
+                <option value="critical">Critical</option>
+              </select></div>
+          </div>
+          <div style={s.factions}>
+            <button onClick={()=>setEditFor(null)} style={s.cancelBtn}>Cancel</button>
+            <button onClick={saveEdit} disabled={editSaving} style={s.submitBtn}>{editSaving?'Saving…':'✓ Save'}</button>
           </div>
         </Modal>
       )}
@@ -213,6 +250,7 @@ const s: Record<string,React.CSSProperties> = {
   load:      { padding:40, color:'var(--text-muted)', textAlign:'center' },
   name:      { fontWeight:600, color:'var(--text)' },
   runBtn:    { padding:'4px 10px', borderRadius:5, background:'var(--accent-dim)', color:'var(--accent)', border:'1px solid rgba(59,130,246,0.3)', fontSize:11, fontWeight:600, cursor:'pointer' },
+  editBtn:   { padding:'4px 8px', borderRadius:5, background:'rgba(245,158,11,0.08)', color:'var(--warning)', border:'1px solid rgba(245,158,11,0.2)', fontSize:12, cursor:'pointer' },
   delBtn:    { padding:'4px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
   msgBox:    { background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.3)', borderRadius:6, padding:'8px 14px', fontSize:13, color:'var(--success)', marginBottom:12, cursor:'pointer' },
   field:     { marginBottom:16 },
