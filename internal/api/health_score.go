@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -9,41 +10,42 @@ import (
 )
 
 // handleHealthScore handles GET /v1/health/score.
-// Computes the Backup Health Score from live catalog data.
-// This is the single canonical source — Dashboard and Prometheus use the same logic.
 func (h *Handler) handleHealthScore(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	writeJSON(w, http.StatusOK, computeScore(r.Context(), h))
+}
+
+// computeScore loads catalog data and calls health.Calculate.
+// Shared by handleHealthScore and handleHealthAlerts — single canonical implementation.
+func computeScore(ctx context.Context, h *Handler) health.ScoreResult {
 	now := time.Now()
 
-	// ── Load data ─────────────────────────────────────────────────────────────
+	systems, _   := h.systems.List(ctx)
+	jobs, _       := h.jobs.List(ctx)
+	snapshots, _  := h.snapshots.List(ctx)
+	rts, _        := h.restoreTests.List(ctx)
+	repos, _      := h.repositories.List(ctx)
+	policies, _   := h.policies.List(ctx)
 
-	systems, _      := h.systems.List(ctx)
-	jobs, _         := h.jobs.List(ctx)
-	snapshots, _    := h.snapshots.List(ctx)
-	rts, _          := h.restoreTests.List(ctx)
-	repos, _        := h.repositories.List(ctx)
-	policies, _     := h.policies.List(ctx)
-
-	// ── Agent connectivity ────────────────────────────────────────────────────
-
+	// ── Agent status ──────────────────────────────────────────────────────────
 	online, idle, offline := 0, 0, 0
 	for _, sys := range systems {
 		switch agentStatusFromLastSeen(sys.LastSeen, now) {
-		case "online":  online++
-		case "idle":    idle++
-		default:        offline++
+		case "online":
+			online++
+		case "idle":
+			idle++
+		default:
+			offline++
 		}
 	}
 
-	// ── Jobs ─────────────────────────────────────────────────────────────────
-
+	// ── Jobs ──────────────────────────────────────────────────────────────────
 	var successJobs, failedJobs, failedLast24h int
 	var lastSuccessAt *time.Time
 	cutoff24h := now.Add(-24 * time.Hour)
-
 	for _, j := range jobs {
 		if j.Type != catalog.JobTypeBackup {
-			continue // skip retention jobs
+			continue
 		}
 		switch j.Status {
 		case "success":
@@ -59,27 +61,18 @@ func (h *Handler) handleHealthScore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ── Snapshots + restore tests ────────────────────────────────────────────
-
-	verified := 0
+	// ── Restore coverage ──────────────────────────────────────────────────────
 	var lastRestoreTestAt *time.Time
-	snapIDSet := make(map[string]bool, len(snapshots))
-	for _, sn := range snapshots {
-		snapIDSet[sn.ID.String()] = true
-	}
 	for _, rt := range rts {
-		if rt.Status == "success" && snapIDSet[rt.SnapshotID.String()] {
-			verified++
-			if rt.FinishedAt != nil && (lastRestoreTestAt == nil || rt.FinishedAt.After(*lastRestoreTestAt)) {
+		if rt.Status == "success" && rt.FinishedAt != nil {
+			if lastRestoreTestAt == nil || rt.FinishedAt.After(*lastRestoreTestAt) {
 				lastRestoreTestAt = rt.FinishedAt
 			}
 		}
 	}
-	// de-duplicate: one verified per snapshot
 	verifiedSnaps := countVerifiedSnapshots(snapshots, rts)
 
-	// ── Repositories ─────────────────────────────────────────────────────────
-
+	// ── Repository security ───────────────────────────────────────────────────
 	unprotected, unencrypted := 0, 0
 	for _, repo := range repos {
 		if !repo.ImmutableMode.IsProtected() {
@@ -90,8 +83,7 @@ func (h *Handler) handleHealthScore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ── Retention ────────────────────────────────────────────────────────────
-
+	// ── Retention ─────────────────────────────────────────────────────────────
 	policiesWithRetention := 0
 	for _, p := range policies {
 		if p.RetentionPlan.HasRules() {
@@ -99,10 +91,7 @@ func (h *Handler) handleHealthScore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ── Calculate ────────────────────────────────────────────────────────────
-
-	_ = verified // used above for dedup
-	input := health.Input{
+	return health.Calculate(health.Input{
 		TotalSystems:          len(systems),
 		OnlineAgents:          online,
 		IdleAgents:            idle,
@@ -120,10 +109,7 @@ func (h *Handler) handleHealthScore(w http.ResponseWriter, r *http.Request) {
 		UnencryptedRepos:      unencrypted,
 		PoliciesWithRetention: policiesWithRetention,
 		Now:                   now,
-	}
-
-	result := health.Calculate(input)
-	writeJSON(w, http.StatusOK, result)
+	})
 }
 
 // countVerifiedSnapshots counts snapshots with at least one successful restore test.
@@ -144,17 +130,17 @@ func countVerifiedSnapshots(snapshots []catalog.Snapshot, rts []catalog.RestoreT
 }
 
 // agentStatusFromLastSeen classifies an agent as online/idle/offline.
-// Must match the Dashboard.tsx and metrics/collector.go thresholds.
 func agentStatusFromLastSeen(lastSeen *time.Time, now time.Time) string {
 	if lastSeen == nil {
 		return "offline"
 	}
 	age := now.Sub(*lastSeen)
-	if age <= health.OnlineThreshold {
+	switch {
+	case age <= health.OnlineThreshold:
 		return "online"
-	}
-	if age <= health.IdleThreshold {
+	case age <= health.IdleThreshold:
 		return "idle"
+	default:
+		return "offline"
 	}
-	return "offline"
 }
