@@ -2,6 +2,20 @@
 // Set VITE_API_URL to override for dev (e.g. http://localhost:8080 when running vite dev server).
 const BASE = import.meta.env.VITE_API_URL || ''
 
+// Read the CSRF token from the osb_csrf cookie (set by the server on every response).
+// The cookie is NOT HttpOnly so JavaScript can read it — required for the Double-Submit pattern.
+function csrfToken(): string {
+  const match = document.cookie.match(/(?:^|;\s*)osb_csrf=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : ''
+}
+
+function mutatingHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': csrfToken(),
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
   if (!res.ok) throw new Error(`${res.status}`)
@@ -11,7 +25,7 @@ async function get<T>(path: string): Promise<T> {
 export async function put<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutatingHeaders(),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`${res.status}`)
@@ -21,11 +35,19 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
 export async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: mutatingHeaders(),
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`${res.status}`)
   return res.json()
+}
+
+export async function del(path: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': csrfToken() },
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`${res.status}`)
 }
 
 export interface System {
@@ -82,10 +104,6 @@ export interface RestoreTest {
   ErrorSummary?: string; CreatedAt: string; UpdatedAt: string
 }
 
-async function del(path: string): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
-  if (!res.ok && res.status !== 204) throw new Error(`${res.status}`)
-}
 
 export const api = {
   health:        () => get<{status:string}>('/health'),
