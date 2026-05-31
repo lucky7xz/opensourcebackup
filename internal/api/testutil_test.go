@@ -10,6 +10,9 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
+// ensure time import is used
+var _ = time.Now
+
 // stubEnrollmentTokenStore — in-memory for tests.
 type stubEnrollmentTokenStore struct{}
 
@@ -91,6 +94,13 @@ func (s *stubSystemStore) Delete(_ context.Context, id uuid.UUID) error {
 		return catalog.ErrNotFound
 	}
 	delete(s.systems, id)
+	return nil
+}
+
+func (s *stubSystemStore) UpdateLastSeen(_ context.Context, id uuid.UUID, _ time.Time) error {
+	if _, ok := s.systems[id]; !ok {
+		return catalog.ErrNotFound
+	}
 	return nil
 }
 
@@ -191,6 +201,10 @@ func (s *stubJobStore) LatestByPolicyID(_ context.Context, _ uuid.UUID) (*catalo
 	return nil, catalog.ErrNotFound
 }
 
+func (s *stubJobStore) ListPendingRetentionBySystemID(_ context.Context, _ uuid.UUID) ([]catalog.BackupJob, error) {
+	return nil, nil
+}
+
 func (s *stubJobStore) ListBySystemID(_ context.Context, systemID uuid.UUID) ([]catalog.BackupJob, error) {
 	var out []catalog.BackupJob
 	for _, j := range s.jobs {
@@ -249,6 +263,10 @@ func (s *stubSnapshotStore) List(_ context.Context) ([]catalog.Snapshot, error) 
 		out = append(out, *snap)
 	}
 	return out, nil
+}
+
+func (s *stubSnapshotStore) ListBySystem(_ context.Context, _ uuid.UUID) ([]catalog.Snapshot, error) {
+	return nil, nil
 }
 
 func (s *stubSnapshotStore) ListByJobID(_ context.Context, jobID uuid.UUID) ([]catalog.Snapshot, error) {
@@ -368,6 +386,10 @@ func (s *stubPolicyStore) GetByID(_ context.Context, id uuid.UUID) (*catalog.Bac
 	}
 	cp := *p
 	return &cp, nil
+}
+
+func (s *stubPolicyStore) ListWithRetention(_ context.Context) ([]catalog.BackupPolicy, error) {
+	return nil, nil
 }
 
 func (s *stubPolicyStore) List(_ context.Context) ([]catalog.BackupPolicy, error) {

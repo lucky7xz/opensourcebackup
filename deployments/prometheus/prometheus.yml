@@ -1,0 +1,46 @@
+# ==============================================================================
+# OpenSourceBackup — Prometheus scrape configuration example
+#
+# Copy and adjust this file to your prometheus.yml.
+# Replace 192.168.1.100:8080 with your actual Control Plane address.
+#
+# Usage:
+#   prometheus --config.file=prometheus.yml
+#
+# Verify:
+#   curl http://localhost:9090/api/v1/targets
+# ==============================================================================
+
+global:
+  scrape_interval:     30s
+  evaluation_interval: 30s
+  scrape_timeout:      15s
+
+scrape_configs:
+
+  # OpenSourceBackup Control Plane
+  - job_name: opensourcebackup
+    static_configs:
+      - targets:
+          - 192.168.1.100:8080   # Replace with your Control Plane host:port
+        labels:
+          instance: opensourcebackup-prod
+
+    # If TLS is enabled:
+    # scheme: https
+    # tls_config:
+    #   insecure_skip_verify: true   # only for self-signed certs in dev
+    #   ca_file: /etc/prometheus/certs/osb-ca.crt   # for production
+
+    # Relabel job metrics for cleaner dashboards
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label:  instance
+
+# ==============================================================================
+# Alert Rules
+# Reference: deployments/prometheus/alert-rules.yml
+# ==============================================================================
+
+rule_files:
+  - alert-rules.yml

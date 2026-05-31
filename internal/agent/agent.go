@@ -18,6 +18,9 @@ import (
 // ControlPlaneClient is the interface the agent uses to talk to the control plane.
 // Defined here (DIP) so the agent package does not import the concrete HTTP client.
 type ControlPlaneClient interface {
+	// Heartbeat — called on every poll cycle to update last_seen_at on the control plane.
+	// Returns ErrUnauthorized if the token was revoked (system deleted, re-enroll required).
+	Heartbeat(ctx context.Context) error
 	// Backup jobs
 	ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error)
 	GetPolicy(ctx context.Context, id uuid.UUID) (*catalog.BackupPolicy, error)
@@ -86,6 +89,18 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) poll(ctx context.Context) error {
+	// Heartbeat first — updates last_seen on the control plane.
+	// On 401 the token was revoked; stop immediately.
+	if err := a.cp.Heartbeat(ctx); err != nil {
+		if isUnauthorized(err) {
+			a.log.Error("heartbeat rejected — token revoked, re-enrollment required")
+			return err
+		}
+		// Network errors are non-fatal — agent continues working even if
+		// the control plane is temporarily unreachable.
+		a.log.Warn("heartbeat failed", "error", err)
+	}
+
 	// Poll backup jobs
 	jobs, err := a.cp.ListPendingJobs(ctx)
 	if err != nil {

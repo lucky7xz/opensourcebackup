@@ -35,6 +35,9 @@ func (s *stubPolicyStore) GetByID(_ context.Context, id uuid.UUID) (*catalog.Bac
 func (s *stubPolicyStore) List(_ context.Context) ([]catalog.BackupPolicy, error) {
 	return s.policies, nil
 }
+func (s *stubPolicyStore) ListWithRetention(_ context.Context) ([]catalog.BackupPolicy, error) {
+	return nil, nil
+}
 func (s *stubPolicyStore) Update(_ context.Context, p *catalog.BackupPolicy) error { return nil }
 func (s *stubPolicyStore) Delete(_ context.Context, _ uuid.UUID) error             { return nil }
 
@@ -56,6 +59,9 @@ func (s *stubJobStore) ListBySystemID(_ context.Context, _ uuid.UUID) ([]catalog
 }
 
 func (s *stubJobStore) ListPendingBySystemID(_ context.Context, _ uuid.UUID) ([]catalog.BackupJob, error) {
+	return nil, nil
+}
+func (s *stubJobStore) ListPendingRetentionBySystemID(_ context.Context, _ uuid.UUID) ([]catalog.BackupJob, error) {
 	return nil, nil
 }
 func (s *stubJobStore) LatestByPolicyID(_ context.Context, policyID uuid.UUID) (*catalog.BackupJob, error) {

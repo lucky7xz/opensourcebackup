@@ -32,6 +32,9 @@ func (s *reloadPolicyStore) GetByID(_ context.Context, id uuid.UUID) (*catalog.B
 func (s *reloadPolicyStore) List(_ context.Context) ([]catalog.BackupPolicy, error) {
 	return s.policies, nil
 }
+func (s *reloadPolicyStore) ListWithRetention(_ context.Context) ([]catalog.BackupPolicy, error) {
+	return nil, nil
+}
 func (s *reloadPolicyStore) Update(_ context.Context, p *catalog.BackupPolicy) error { return nil }
 func (s *reloadPolicyStore) Delete(_ context.Context, _ uuid.UUID) error             { return nil }
 
