@@ -12,6 +12,82 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — 2026-06-01
+
+### Added — Dashboard & UI
+
+- **B_DASH** — Dashboard v2: KPI row, Recovery Score card with explained deductions,
+  Restore Verification Donut (SVG, no external lib), Quick Actions in sidebar
+- **Activity Chart** — 24h bar chart (Backups / Restore Tests / Failures), SVG, no library
+- **Alerts Preview Panel** — top active alerts embedded in dashboard with severity + action
+- **Recent Evidence Panel** — last 6 audit events embedded in dashboard
+- **Repository Health Table** — Immutability badge, Encryption, Verified count, Last Backup/Restore
+- **Agent Activity** — Online/Idle/Offline donut + Last Seen list with status dots
+
+### Added — Security & DSGVO
+
+- **B_IMM** — Immutable Repository Checks: `immutable_mode` field (none/object_lock/worm/append_only/unknown),
+  Migration 000015, Repository Health API (`GET /v1/repositories/health`, `GET /v1/repositories/{id}/health`)
+- **B_AUD** — Structured Audit Log: `actor_type` + `severity` fields (Migration 000016),
+  Fluent Builder (`audit.Event(...).By(...).Severity(...).Build()`),
+  Actions wired in repositories, policies, enrollment, retention handlers,
+  Evidence page (`/evidence`) with filter by severity/category
+- **B_RBAC** — Multi-user RBAC: `users` table (Migration 000017), Admin/Operator/Viewer roles,
+  Bootstrap admin on first start (ADMIN_EMAIL + ADMIN_PASSWORD),
+  `POST /auth/login`, `GET /auth/me`, user management API (`/v1/users`),
+  Protect destructive endpoints by role, session invalidation on role change,
+  Last-admin protection (cannot delete or demote last admin)
+- **B_TLS** — TLS hardening: `TLS_REQUIRED=true` enforcement flag (refuses HTTP startup),
+  HTTP→HTTPS redirect server (`HTTP_REDIRECT_ADDR`),
+  `gencert` accepts LAN IP args (`make certs TLS_IP=192.168.1.100`),
+  `Makefile`: `make certs TLS_IP=...`
+
+### Added — Observability
+
+- **B15** — Prometheus metrics (`GET /metrics`): jobs, restore tests, agents online/idle/offline,
+  snapshots verified ratio, recovery score — all same truth as dashboard
+- **B_HB** — Agent Heartbeat: `PUT /v1/agent/heartbeat`, `systems.last_seen` updated on every poll,
+  Agent Activity Donut (Online ≤2min / Idle ≤15min / Offline), Last Seen list
+- **B_SC v2** — Backup Health Score v2: `internal/health/` canonical package,
+  `GET /v1/health/score`, `GET /v1/health/activity` (hourly buckets),
+  12 deduction codes (restore_test_stale, backup_stale_24h, agents_offline, repos_not_immutable …),
+  Positive factors shown alongside deductions, Score v2.0 label
+- **B_ALERTS** — Alerts page (`/alerts`): stateless alerts from health score deductions,
+  `GET /v1/health/alerts`, severity filter, category filter, action guidance per alert,
+  "Go to X" navigation buttons, All-clear state
+
+### Added — Retention
+
+- **B_RET** — Retention + Prune Engine: typed retention fields on policies
+  (keep_last/daily/weekly/monthly/yearly, Migration 000014),
+  `backup_jobs.type` column (backup | retention),
+  Agent retention routes: list jobs, validate candidates (safety rule), complete, fail,
+  **Hard safety rule**: last restore-tested snapshot never deleted
+  (enforced server-side, agent cannot bypass)
+
+### Added — Installer & DevOps
+
+- **Proxmox LXC auto-installer** (`scripts/install-proxmox.sh`): auto-detects free container ID,
+  downloads Debian 12 template, creates LXC, installs inside
+- **Windows local all-in-one installer** (`scripts/install-local.ps1`, NSIS `local-installer.nsi`)
+- **MSI installer** (`build/windows/agent.wxs`) for enterprise SCCM/GPO deployment
+- **`scripts/build-release.ps1`**: builds all platforms + MSI + EXE + SHA256 checksums
+- **`.env.example`**: all environment variables documented
+- **GitHub Action** (`.github/workflows/sync-main.yml`): auto-syncs master→main after every push
+
+### Fixed
+
+- **RBAC redirect loop**: `/ui/` was not in public paths → infinite redirect, fixed
+- **RBAC dev mode**: auth only enforced when BOTH `ADMIN_EMAIL` AND `ADMIN_PASSWORD` set
+- **CSRF token not sent**: added `X-CSRF-Token` header to all POST/PUT/DELETE in frontend
+- **Vite base path**: set `base: '/ui/'` so assets resolve correctly when served under `/ui/`
+- **API URL fallback**: `BASE` defaults to `''` (relative) not `http://localhost:8080`
+- **TypeScript errors**: unused `VERSION`, `scoreResult`, `useEffect`, `totalH`, `size` vars
+- **Old calcRecoveryScore**: removed from Dashboard.tsx (now computed by Go backend)
+- **Audit log query**: added `?limit=N` parameter support
+
+---
+
 ## [0.1.0] — 2026-05-31
 
 ### Added — Core Platform
@@ -109,6 +185,65 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ---
 
 ## [Deutsch]
+
+---
+
+## [Unveröffentlicht] — 2026-06-01
+
+### Hinzugefügt — Dashboard & UI
+
+- **B_DASH** — Dashboard v2: KPI-Zeile, Recovery Score mit erklärten Abzügen,
+  Restore Verification Donut (SVG, keine externe Library), Quick Actions in Sidebar
+- **Activity Chart** — 24h-Balkendiagramm (Backups / Restore Tests / Failures), SVG
+- **Alerts Preview Panel** — Top-Alerts direkt im Dashboard mit Severity und Handlungsempfehlung
+- **Recent Evidence Panel** — Letzte 6 Audit-Events im Dashboard
+- **Repository Health Tabelle** — Immutability-Badge, Verschlüsselung, Verified-Anzahl, Last Backup/Restore
+- **Agent Activity** — Online/Idle/Offline Donut + Last-Seen-Liste mit Status-Punkten
+
+### Hinzugefügt — Sicherheit & DSGVO
+
+- **B_IMM** — Immutable Repository Checks: `immutable_mode`-Feld (none/object_lock/worm/append_only/unknown),
+  Migration 000015, Repository Health API
+- **B_AUD** — Strukturiertes Audit-Log: `actor_type` + `severity`-Felder (Migration 000016),
+  Fluent Builder, Events in Repositories-, Policies-, Enrollment- und Retention-Handlern verdrahtet,
+  Evidence-Seite mit Severity/Kategorie-Filter
+- **B_RBAC** — Multi-User RBAC: `users`-Tabelle (Migration 000017), Admin/Operator/Viewer-Rollen,
+  Bootstrap-Admin beim ersten Start (ADMIN_EMAIL + ADMIN_PASSWORD),
+  Destructive Endpoints nach Rolle geschützt, Sessions bei Rollenwechsel invalidiert,
+  Letzter-Admin-Schutz (kann nicht gelöscht oder degradiert werden)
+- **B_TLS** — TLS-Härtung: `TLS_REQUIRED=true` verweigert HTTP-Start,
+  HTTP→HTTPS Redirect-Server, `gencert` mit LAN-IP-Argumenten
+
+### Hinzugefügt — Observability
+
+- **B15** — Prometheus Metriken (`GET /metrics`): Jobs, Restore Tests, Agent-Status,
+  Snapshot-Verifizierungsrate, Recovery Score — gleiche Wahrheit wie Dashboard
+- **B_HB** — Agent Heartbeat: `PUT /v1/agent/heartbeat`, `systems.last_seen` bei jedem Poll,
+  Agent Activity Donut, Last-Seen-Liste
+- **B_SC v2** — Backup Health Score v2: kanonisches `internal/health/`-Package,
+  `GET /v1/health/score`, `GET /v1/health/activity`, 12 Abzugscodes,
+  Positive Faktoren neben Abzügen angezeigt
+- **B_ALERTS** — Alerts-Seite (`/alerts`): zustandslose Alerts aus Health-Score-Abzügen,
+  Severity-/Kategorie-Filter, Handlungsempfehlung pro Alert, Navigation zu betroffener Seite
+
+### Hinzugefügt — Retention
+
+- **B_RET** — Retention + Prune Engine: typisierte Retention-Felder auf Policies
+  (Migration 000014), `backup_jobs.type` (backup | retention),
+  **Harte Sicherheitsregel**: Letzter restore-getesteter Snapshot wird niemals gelöscht
+
+### Hinzugefügt — Installer & DevOps
+
+- **Proxmox LXC Auto-Installer** (`scripts/install-proxmox.sh`)
+- **Windows Alles-in-einem Installer** (`scripts/install-local.ps1`, NSIS)
+- **MSI-Installer** (`build/windows/agent.wxs`) für Enterprise SCCM/GPO
+- **GitHub Action** auto-synct master→main nach jedem Push
+
+### Behoben
+
+- RBAC Redirect-Loop, Dev-Mode, CSRF-Token fehlte in POST/PUT/DELETE
+- Vite base-Pfad, API-URL-Fallback, TypeScript-Fehler
+- Alter `calcRecoveryScore` aus Dashboard entfernt (jetzt Go-Backend)
 
 ---
 
