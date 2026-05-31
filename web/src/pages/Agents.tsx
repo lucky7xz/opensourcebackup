@@ -179,17 +179,17 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
             {/* Register new system inline */}
             <div style={s.newSysToggle}>
               <button onClick={() => { setShowNewSys(v => !v); setErr(null) }} style={s.addBtn}>
-                {showNewSys ? '▲ Cancel' : '+ Register new system'}
+                {showNewSys ? '▲ Cancel' : '+ New Agent'}
               </button>
             </div>
 
             {showNewSys && (
               <div style={s.newSysBox}>
-                <div style={s.label}>Hostname</div>
+                <div style={s.label}>Agent Name / Hostname</div>
                 <div style={{ display:'flex', gap:8 }}>
                   <input
                     style={{ ...s.input, flex:1 }}
-                    placeholder="e.g. web-server-01 or 192.168.1.10"
+                    placeholder="z.B. web-server-01 oder 192.168.1.10"
                     value={newHostname}
                     onChange={e => setNewHostname(e.target.value)}
                     onKeyDown={e => e.key==='Enter' && registerAndSelect()}
@@ -200,7 +200,7 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
                     disabled={creatingSys || !newHostname.trim()}
                     style={s.primary}
                   >
-                    {creatingSys ? 'Registering…' : 'Register'}
+                    {creatingSys ? '…' : 'Add'}
                   </button>
                 </div>
               </div>
