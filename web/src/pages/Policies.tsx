@@ -5,7 +5,12 @@ import { Table } from '../components/Table'
 import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 
-const ENGINES   = ['restic', 'borg', 'pgbackrest', 'velero']
+const ENGINES = [
+  { value: 'restic',     label: 'Restic',     desc: 'Dateien & Ordner — Windows, Linux, NAS, S3' },
+  { value: 'borg',       label: 'Borg',        desc: 'Linux-Server via SSH — sehr effizient' },
+  { value: 'pgbackrest', label: 'pgBackRest',  desc: 'PostgreSQL-Datenbanken — WAL & Point-in-Time' },
+  { value: 'velero',     label: 'Velero',      desc: 'Kubernetes-Cluster — Deployments & Volumes' },
+]
 const SCHEDULES = [
   { label: 'Daily at 02:00',    value: '0 2 * * *' },
   { label: 'Daily at midnight', value: '0 0 * * *' },
@@ -89,7 +94,10 @@ export function Policies() {
           <Table
             cols={[
               { header:'Name',       render:p => <span style={s.name}>{p.Name}</span> },
-              { header:'Engine',     render:p => <span style={s.badge}>{p.Engine}</span>, width:'90px' },
+              { header:'Engine',     render:p => {
+                const e = ENGINES.find(e=>e.value===p.Engine)
+                return <span style={s.badge} title={e?.desc}>{p.Engine}</span>
+              }, width:'90px' },
               { header:'Schedule',   render:p => p.Schedule ? <span style={s.mono}>{p.Schedule}</span> : <span style={s.dim}>manual</span> },
               { header:'Includes',   render:p => <div>{(p.Includes??[]).map(i=><div key={i} style={s.path}>{i}</div>)}</div> },
               { header:'Repository', render:p => p.RepositoryID
@@ -130,7 +138,7 @@ export function Policies() {
               <div style={s.field}>
                 <label style={s.label}>Engine</label>
                 <select style={s.select} value={engine} onChange={e=>setEngine(e.target.value)}>
-                  {ENGINES.map(e=><option key={e} value={e}>{e}</option>)}
+                  {ENGINES.map(e=><option key={e.value} value={e.value}>{e.label} — {e.desc}</option>)}
                 </select>
               </div>
             </div>
