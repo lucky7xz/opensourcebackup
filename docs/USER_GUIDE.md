@@ -43,12 +43,12 @@ Im Proxmox Shell oder über das Datacenter-Terminal:
 pveam update
 pveam available | grep debian
 
-# Template herunterladen (Name je nach Proxmox-Version prüfen!)
-pveam download local debian-12-standard_12.7-1_amd64.tar.zst
-# Bei Fehler: pveam available | grep debian  → richtigen Namen nehmen
+# Neuestes Debian 12 Template herunterladen
+# (Name prüfen: pveam available | grep "debian-12-standard")
+pveam download local debian-12-standard_12.12-1_amd64.tar.zst
 
-# Template-Name automatisch ermitteln
-TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -1)
+# Template-Name automatisch ermitteln (funktioniert mit jeder Version)
+TEMPLATE=$(pveam list local | grep "debian-12-standard" | awk '{print $1}' | tail -1)
 echo "Verwende Template: $TEMPLATE"
 
 # LXC erstellen
