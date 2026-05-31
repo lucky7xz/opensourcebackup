@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type System } from '../api'
+import { api, post, type System } from '../api'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const VERSION = 'v0.1.0'
@@ -15,7 +15,10 @@ type Step = 'system' | 'platform' | 'config' | 'install'
 export function Agents() {
   const [step,       setStep]       = useState<Step>('system')
   const [systems,    setSystems]    = useState<System[]>([])
-  const [selSystem,  setSelSystem]  = useState<System|null>(null)
+  const [selSystem,    setSelSystem]    = useState<System|null>(null)
+  const [showNewSys,   setShowNewSys]   = useState(false)
+  const [newHostname,  setNewHostname]  = useState('')
+  const [creatingSys,  setCreatingSys]  = useState(false)
   const [platform,   setPlatform]   = useState('')
   const [resticRepo, setResticRepo] = useState('C:/tmp/backup-repo')
   const [resticPass, setResticPass] = useState('')
@@ -28,6 +31,19 @@ export function Agents() {
   useEffect(() => { api.systems().then(setSystems) }, [])
 
   // ── Step helpers ───────────────────────────────────────────────────────────
+
+  async function registerAndSelect() {
+    if (!newHostname.trim()) return
+    setCreatingSys(true); setErr(null)
+    try {
+      const sys = await post<System>('/v1/systems', { Hostname: newHostname.trim(), RiskClass: 'standard' })
+      setSystems(prev => [...prev, sys])
+      setSelSystem(sys)
+      setShowNewSys(false)
+      setNewHostname('')
+    } catch { setErr('Could not register system. Is the control plane running?') }
+    finally { setCreatingSys(false) }
+  }
 
   function goToPlatform() {
     if (!selSystem) { setErr('Please select a system.'); return }
@@ -156,6 +172,36 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
                       {selSystem?.ID===sys.ID && <span style={s.checkmark}>✓</span>}
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Register new system inline */}
+            <div style={s.newSysToggle}>
+              <button onClick={() => { setShowNewSys(v => !v); setErr(null) }} style={s.addBtn}>
+                {showNewSys ? '▲ Cancel' : '+ Register new system'}
+              </button>
+            </div>
+
+            {showNewSys && (
+              <div style={s.newSysBox}>
+                <div style={s.label}>Hostname</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  <input
+                    style={{ ...s.input, flex:1 }}
+                    placeholder="e.g. web-server-01 or 192.168.1.10"
+                    value={newHostname}
+                    onChange={e => setNewHostname(e.target.value)}
+                    onKeyDown={e => e.key==='Enter' && registerAndSelect()}
+                    autoFocus
+                  />
+                  <button
+                    onClick={registerAndSelect}
+                    disabled={creatingSys || !newHostname.trim()}
+                    style={s.primary}
+                  >
+                    {creatingSys ? 'Registering…' : 'Register'}
+                  </button>
                 </div>
               </div>
             )}
@@ -384,6 +430,9 @@ const s: Record<string, React.CSSProperties> = {
   sysIcon:      { fontSize:20 },
   checkmark:    { marginLeft:'auto', color:'var(--accent)', fontWeight:700, fontSize:16 },
   emptyHint:    { background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:8, padding:'14px 16px', fontSize:13, color:'var(--text-muted)' },
+  newSysToggle: { marginTop:12 },
+  newSysBox:    { marginTop:8, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px' },
+  input:        { padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
   platformGrid: { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:8 },
   platformCard: { padding:'20px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', textAlign:'center' as const, transition:'all 0.12s' },
   platformCardOn:{ borderColor:'var(--accent)', background:'var(--accent-dim)' },
