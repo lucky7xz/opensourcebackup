@@ -26,13 +26,16 @@ fmt:
 	goimports -w -local github.com/cerberus8484/opensourcebackup .
 
 # ── Lint ────────────────────────────────────────────────────────────────────
+# Nur eigene Packages — web/node_modules enthält npm-Go-Dateien die wir nicht kontrollieren
+GO_PKGS := ./cmd/... ./internal/...
+
 # Schicht 1: blockiert — Verletzung = kein Merge (siehe .golangci.hard.yml)
 lint:
-	golangci-lint run --config .golangci.hard.yml ./...
+	golangci-lint run --config .golangci.hard.yml $(GO_PKGS)
 
 # Schicht 2: Baustellen — blockiert nie (siehe .golangci.warn.yml)
 lint-warn:
-	golangci-lint run --config .golangci.warn.yml ./...
+	golangci-lint run --config .golangci.warn.yml $(GO_PKGS)
 
 # Alles in einem: fmt → lint → test
 check: fmt lint test

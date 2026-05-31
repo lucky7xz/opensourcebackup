@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -11,12 +12,21 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
+// PolicyChangeNotifier is implemented by the Scheduler.
+// The API handler calls PoliciesChanged after any policy mutation so that
+// the scheduler picks up the new state without a restart.
+type PolicyChangeNotifier interface {
+	PoliciesChanged(ctx context.Context)
+}
+
 // Scheduler dispatches backup jobs according to policy cron schedules.
 type Scheduler struct {
 	policies catalog.PolicyStore
 	jobs     catalog.JobStore
-	cron     *cron.Cron
 	log      *slog.Logger
+
+	mu   sync.Mutex
+	cron *cron.Cron
 }
 
 // New creates a Scheduler. Call Start to activate it.
@@ -24,18 +34,55 @@ func New(policies catalog.PolicyStore, jobs catalog.JobStore, log *slog.Logger) 
 	return &Scheduler{
 		policies: policies,
 		jobs:     jobs,
-		cron:     cron.New(),
 		log:      log,
+		cron:     cron.New(),
 	}
 }
 
 // Start loads all scheduled policies, registers cron entries, and runs the
 // dead-man's switch checker until ctx is canceled.
 func (s *Scheduler) Start(ctx context.Context) error {
+	if err := s.reload(ctx); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.cron.Start()
+	s.mu.Unlock()
+
+	go s.runDeadManSwitch(ctx)
+
+	<-ctx.Done()
+	s.mu.Lock()
+	s.cron.Stop()
+	s.mu.Unlock()
+	s.log.Info("scheduler stopped")
+	return nil
+}
+
+// PoliciesChanged implements PolicyChangeNotifier.
+// Safe to call from any goroutine — reloads the cron schedule atomically.
+func (s *Scheduler) PoliciesChanged(ctx context.Context) {
+	s.log.Info("scheduler: policies changed — reloading")
+	if err := s.reload(ctx); err != nil {
+		s.log.Error("scheduler reload failed", "error", err)
+	}
+}
+
+// reload stops the current cron, loads all policies from DB,
+// and registers new cron entries. Thread-safe via mutex.
+func (s *Scheduler) reload(ctx context.Context) error {
 	policies, err := s.policies.List(ctx)
 	if err != nil {
 		return err
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Stop old cron and create a fresh one.
+	s.cron.Stop()
+	s.cron = cron.New()
 
 	scheduled := 0
 	for _, p := range policies {
@@ -43,10 +90,9 @@ func (s *Scheduler) Start(ctx context.Context) error {
 			continue
 		}
 		pol := p // capture for closure
-		_, err := s.cron.AddFunc(*pol.Schedule, func() {
+		if _, err := s.cron.AddFunc(*pol.Schedule, func() {
 			s.dispatchJob(context.Background(), pol)
-		})
-		if err != nil {
+		}); err != nil {
 			s.log.Warn("invalid cron schedule — skipping policy",
 				"policy_id", pol.ID,
 				"policy_name", pol.Name,
@@ -56,26 +102,14 @@ func (s *Scheduler) Start(ctx context.Context) error {
 			continue
 		}
 		scheduled++
-		s.log.Info("policy scheduled",
-			"policy_id", pol.ID,
-			"policy_name", pol.Name,
-			"schedule", *pol.Schedule,
-		)
 	}
 
 	s.cron.Start()
-	s.log.Info("scheduler started", "scheduled_policies", scheduled)
-
-	go s.runDeadManSwitch(ctx, policies)
-
-	<-ctx.Done()
-	s.cron.Stop()
-	s.log.Info("scheduler stopped")
+	s.log.Info("scheduler reloaded", "scheduled_policies", scheduled)
 	return nil
 }
 
 // dispatchJob creates a pending BackupJob record for the agent to pick up.
-// SystemID is left zero — the agent fills this in when it claims the job.
 func (s *Scheduler) dispatchJob(ctx context.Context, p catalog.BackupPolicy) {
 	j := &catalog.BackupJob{
 		PolicyID: p.ID,
@@ -96,7 +130,7 @@ func (s *Scheduler) dispatchJob(ctx context.Context, p catalog.BackupPolicy) {
 	)
 }
 
-func (s *Scheduler) runDeadManSwitch(ctx context.Context, policies []catalog.BackupPolicy) {
+func (s *Scheduler) runDeadManSwitch(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
@@ -105,12 +139,20 @@ func (s *Scheduler) runDeadManSwitch(ctx context.Context, policies []catalog.Bac
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.checkDeadMan(ctx, policies)
+			s.mu.Lock()
+			// Collect current entries to check
+			s.mu.Unlock()
+			s.checkDeadMan(ctx)
 		}
 	}
 }
 
-func (s *Scheduler) checkDeadMan(ctx context.Context, policies []catalog.BackupPolicy) {
+func (s *Scheduler) checkDeadMan(ctx context.Context) {
+	policies, err := s.policies.List(ctx)
+	if err != nil {
+		s.log.Error("dead-man: failed to load policies", "error", err)
+		return
+	}
 	for _, p := range policies {
 		if p.Schedule == nil || *p.Schedule == "" {
 			continue
@@ -126,7 +168,6 @@ func (s *Scheduler) checkDeadMan(ctx context.Context, policies []catalog.BackupP
 			s.log.Warn("dead-man: no job ever ran for policy",
 				"policy_id", p.ID,
 				"policy_name", p.Name,
-				"expected_interval", interval,
 			)
 			continue
 		}
@@ -138,16 +179,12 @@ func (s *Scheduler) checkDeadMan(ctx context.Context, policies []catalog.BackupP
 			s.log.Warn("dead-man: overdue job detected",
 				"policy_id", p.ID,
 				"policy_name", p.Name,
-				"last_job_id", latest.ID,
 				"last_job_at", latest.CreatedAt,
-				"overdue_since", deadline,
 			)
 		}
 	}
 }
 
-// cronInterval returns the approximate duration between two consecutive
-// scheduled times for the given cron expression.
 func cronInterval(expr string) (time.Duration, error) {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	sched, err := parser.Parse(expr)

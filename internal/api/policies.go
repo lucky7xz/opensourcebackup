@@ -40,6 +40,7 @@ func (h *Handler) createPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	h.notifyPoliciesChanged(r.Context())
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -73,6 +74,7 @@ func (h *Handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	h.notifyPoliciesChanged(r.Context())
 	writeJSON(w, http.StatusOK, p)
 }
 
@@ -86,5 +88,6 @@ func (h *Handler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	h.notifyPoliciesChanged(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }

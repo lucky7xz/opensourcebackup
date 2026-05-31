@@ -6,6 +6,8 @@ version: "2"
 
 run:
   timeout: 5m
+  exclude-dirs:
+    - web
 
 formatters:
   enable:
@@ -51,3 +53,6 @@ issues:
     # resp.Body.Close() Fehler ist in Go HTTP-Code universell ignoriert
     - linters: [errcheck]
       text: "Error return value of `resp.Body.Close` is not checked"
+    # web/node_modules enthält Go-Dateien von npm-Paketen — nicht unser Code
+    - path: "node_modules"
+      linters: [errcheck, staticcheck, unused, govet, misspell, ineffassign, bodyclose, sqlclosecheck]

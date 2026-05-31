@@ -8,7 +8,9 @@ version: "2"
 
 run:
   timeout: 5m
-  issues-exit-code: 0   # niemals blockieren
+  issues-exit-code: 0
+  exclude-dirs:
+    - web   # niemals blockieren
 
 formatters:
   enable:

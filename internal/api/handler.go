@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -9,6 +10,13 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
+
+// PolicyChangeNotifier is called after any policy create/update/delete
+// so the scheduler can reload its cron entries without a restart.
+// Using an interface keeps the API layer decoupled from the scheduler (DIP).
+type PolicyChangeNotifier interface {
+	PoliciesChanged(ctx context.Context)
+}
 
 // ErrBodyTooLarge is returned by decode when the request body exceeds the configured limit.
 var ErrBodyTooLarge = errors.New("request body too large")
@@ -22,6 +30,7 @@ type Handler struct {
 	snapshots        catalog.SnapshotStore
 	enrollmentTokens auth.EnrollmentTokenStore
 	agentTokens      auth.AgentTokenStore
+	policyNotifier   PolicyChangeNotifier // may be nil
 	log              *slog.Logger
 }
 
@@ -45,6 +54,19 @@ func New(
 		enrollmentTokens: enrollmentTokens,
 		agentTokens:      agentTokens,
 		log:              log,
+	}
+}
+
+// WithPolicyNotifier wires a PolicyChangeNotifier into the handler.
+func (h *Handler) WithPolicyNotifier(n PolicyChangeNotifier) *Handler {
+	h.policyNotifier = n
+	return h
+}
+
+// notifyPoliciesChanged calls the notifier if one is registered.
+func (h *Handler) notifyPoliciesChanged(ctx context.Context) {
+	if h.policyNotifier != nil {
+		h.policyNotifier.PoliciesChanged(ctx)
 	}
 }
 

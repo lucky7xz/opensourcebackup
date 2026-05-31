@@ -46,17 +46,6 @@ func main() {
 
 	logger.Info("database connected")
 
-	handler := api.New(
-		catalog.NewSystemStore(db),
-		catalog.NewRepositoryStore(db),
-		catalog.NewPolicyStore(db),
-		catalog.NewJobStore(db),
-		catalog.NewSnapshotStore(db),
-		auth.NewEnrollmentTokenStore(db),
-		auth.NewAgentTokenStore(db),
-		logger,
-	)
-
 	sched := scheduler.New(
 		catalog.NewPolicyStore(db),
 		catalog.NewJobStore(db),
@@ -67,6 +56,17 @@ func main() {
 			logger.Error("scheduler error", "error", err)
 		}
 	}()
+
+	handler := api.New(
+		catalog.NewSystemStore(db),
+		catalog.NewRepositoryStore(db),
+		catalog.NewPolicyStore(db),
+		catalog.NewJobStore(db),
+		catalog.NewSnapshotStore(db),
+		auth.NewEnrollmentTokenStore(db),
+		auth.NewAgentTokenStore(db),
+		logger,
+	).WithPolicyNotifier(sched) // sched implements PolicyChangeNotifier
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)

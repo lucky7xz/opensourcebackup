@@ -14,7 +14,7 @@ var validName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 // downloadAgent handles GET /downloads/agent/{version}/{platform}
 // Serves pre-built agent binaries from dist/agent/{version}/.
 func (h *Handler) downloadAgent(w http.ResponseWriter, r *http.Request) {
-	version  := r.PathValue("version")
+	version := r.PathValue("version")
 	platform := r.PathValue("platform")
 
 	if !validName.MatchString(version) || !validName.MatchString(platform) {
@@ -52,12 +52,18 @@ func (h *Handler) listDownloads(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var entries []entry
-	versions, _ := os.ReadDir("dist/agent")
+	versions, err := os.ReadDir("dist/agent")
+	if err != nil {
+		versions = nil // dist/agent doesn't exist yet — return empty list
+	}
 	for _, v := range versions {
 		if !v.IsDir() {
 			continue
 		}
-		files, _ := os.ReadDir(filepath.Join("dist", "agent", v.Name()))
+		files, ferr := os.ReadDir(filepath.Join("dist", "agent", v.Name()))
+		if ferr != nil {
+			continue
+		}
 		for _, f := range files {
 			if f.IsDir() {
 				continue
