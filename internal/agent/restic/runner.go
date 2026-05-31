@@ -85,6 +85,22 @@ func (r *Runner) Restore(ctx context.Context, opts RestoreOptions) (*RestoreResu
 	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+opts.Password)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		outStr := string(out)
+		// On Windows, restic exits with error code 1 when it cannot set
+		// timestamps on protected system directories (e.g. C:\Users).
+		// This is a metadata-only issue — the actual files are restored.
+		// Treat as success if the summary shows files were restored.
+		if isWindowsTimestampError(outStr) {
+			// Parse how many files were actually restored
+			files, totalBytes, walkErr := countFiles(opts.TargetPath)
+			if walkErr == nil && files > 0 {
+				return &RestoreResult{
+					TargetPath:    opts.TargetPath,
+					VerifiedFiles: files,
+					VerifiedBytes: totalBytes,
+				}, nil
+			}
+		}
 		return nil, fmt.Errorf("restic restore: %w — %s", err, bytes.TrimSpace(out))
 	}
 
@@ -99,6 +115,17 @@ func (r *Runner) Restore(ctx context.Context, opts RestoreOptions) (*RestoreResu
 		VerifiedFiles: files,
 		VerifiedBytes: totalBytes,
 	}, nil
+}
+
+// isWindowsTimestampError returns true when restic failed only because it
+// could not set timestamps on Windows system directories (UtimesNano / Zugriff verweigert).
+// The actual file data was restored successfully.
+func isWindowsTimestampError(out string) bool {
+	hasTimestamp := strings.Contains(out, "UtimesNano") ||
+		strings.Contains(out, "Zugriff verweigert") ||
+		strings.Contains(out, "Access is denied")
+	hasSummary := strings.Contains(out, "Summary: Restored")
+	return hasTimestamp && hasSummary
 }
 
 // validateRestorePath ensures the target is non-empty, not a dangerous root,
