@@ -246,15 +246,38 @@ make build-agent-freebsd          # FreeBSD agent
 
 ---
 
+## What's included (v0.2 — 2026-06-01)
+
+| Feature | Status |
+|---|---|
+| Backup orchestration (Restic) | ✅ |
+| Restore verification with sandbox | ✅ |
+| Multi-platform agents (Windows/Linux/FreeBSD) | ✅ |
+| Agent runs as system service | ✅ |
+| Agent Heartbeat + Online/Idle/Offline status | ✅ |
+| Backup Health Score v2 with explained deductions | ✅ |
+| Prometheus `/metrics` endpoint | ✅ |
+| Alert rules (`deployments/prometheus/alert-rules.yml`) | ✅ |
+| Alerts page with action guidance | ✅ |
+| Retention + Prune Engine (safety rule: last verified snapshot protected) | ✅ |
+| Immutable Repository Checks (object_lock/worm/append_only) | ✅ |
+| Audit Log (append-only, IP hashed, PostgreSQL RLS) | ✅ |
+| Evidence page | ✅ |
+| RBAC: Admin / Operator / Viewer roles | ✅ |
+| GDPR: export (Art. 20) + purge (Art. 17) | ✅ |
+| TLS with `TLS_REQUIRED` enforcement | ✅ |
+| Proxmox LXC auto-installer | ✅ |
+| Windows all-in-one installer (MSI + EXE) | ✅ |
+
 ## Roadmap
 
 | # | Feature | Status |
 |---|---|---|
-| B_RBAC | Login UI + Admin/Operator/Auditor roles | 🔜 Next |
-| B_RET | Retention policies + automatic prune | 🔜 Planned |
-| B15 | Prometheus metrics endpoint | 📋 Planned |
-| R-01 | Remove CSP `unsafe-inline` | 📋 Backlog |
-| R-03 | TLS enforcement flag | 📋 Backlog |
+| B_LOGIN | Login UI for RBAC (frontend) | 🔜 Next |
+| B_REPORTS | Morning report / PDF export | 📋 Planned |
+| B_SCALE | Sites / multi-location | 📋 Planned |
+| B_MFA | MFA for admin accounts | 📋 Planned |
+| R-01 | Remove CSP `unsafe-inline` (self-hosted fonts) | 📋 Backlog |
 
 ---
 

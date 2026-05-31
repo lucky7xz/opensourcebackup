@@ -245,15 +245,36 @@ make build-agent-freebsd          # FreeBSD-Agent
 
 ---
 
+## Enthaltene Features (v0.2 — 2026-06-01)
+
+| Feature | Status |
+|---|---|
+| Backup-Orchestrierung (Restic) | ✅ |
+| Restore-Verifizierung mit Sandbox | ✅ |
+| Multi-Plattform Agents (Windows/Linux/FreeBSD) | ✅ |
+| Agent als Systemdienst (Windows Service/systemd/rc.d) | ✅ |
+| Agent Heartbeat + Online/Idle/Offline-Status | ✅ |
+| Backup Health Score v2 mit erklärten Abzügen | ✅ |
+| Prometheus `/metrics` Endpunkt | ✅ |
+| Alert-Seite mit Handlungsempfehlungen | ✅ |
+| Retention + Prune Engine (Sicherheitsregel: letzter verifizierter Snapshot geschützt) | ✅ |
+| Immutable Repository Checks | ✅ |
+| Audit-Log (Append-Only, IP gehasht, PostgreSQL RLS) | ✅ |
+| RBAC: Admin / Operator / Viewer Rollen | ✅ |
+| DSGVO: Export (Art. 20) + Löschung (Art. 17) | ✅ |
+| TLS mit `TLS_REQUIRED`-Enforcement | ✅ |
+| Proxmox LXC Auto-Installer | ✅ |
+| Windows Alles-in-einem Installer (MSI + EXE) | ✅ |
+
 ## Roadmap
 
 | # | Feature | Status |
 |---|---|---|
-| B_RBAC | Login-UI + Admin/Operator/Auditor-Rollen | 🔜 Nächster Schritt |
-| B_RET | Retention-Policies + automatisches Prune | 🔜 Geplant |
-| B15 | Prometheus-Metriken-Endpunkt | 📋 Geplant |
-| R-01 | CSP `unsafe-inline` entfernen (Self-hosted Fonts) | 📋 Backlog |
-| R-03 | TLS-Enforcement-Flag | 📋 Backlog |
+| B_LOGIN | Login-UI für RBAC (Frontend) | 🔜 Nächster Schritt |
+| B_REPORTS | Morgenbericht / PDF-Export | 📋 Geplant |
+| B_SCALE | Sites / Multi-Standort | 📋 Geplant |
+| B_MFA | MFA für Admin-Accounts | 📋 Geplant |
+| R-01 | CSP `unsafe-inline` entfernen | 📋 Backlog |
 
 ---
 
