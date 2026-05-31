@@ -102,6 +102,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /v1/restore-tests/{id}/fail", h.failRestoreTest)
 	mux.HandleFunc("DELETE /v1/restore-tests/{id}", h.deleteRestoreTest)
 
+	// ── Health score ──────────────────────────────────────────────────────
+	mux.HandleFunc("GET /v1/health/score", h.handleHealthScore)
+
 	// ── Audit log (GDPR transparency) ─────────────────────────────────────
 	mux.HandleFunc("GET /v1/audit", h.handleAuditLog)
 
