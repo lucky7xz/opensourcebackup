@@ -70,6 +70,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /v1/restore-tests/{id}/complete", h.completeRestoreTest)
 	mux.HandleFunc("PUT /v1/restore-tests/{id}/fail", h.failRestoreTest)
 	mux.HandleFunc("DELETE /v1/restore-tests/{id}", h.deleteRestoreTest)
+
+	// Web UI — served from WEB_UI_DIR (default: web/dist).
+	// All unknown paths fall through to index.html for React Router.
+	webDir := h.webUIDir()
+	if webDir != "" {
+		mux.Handle("/ui/", http.StripPrefix("/ui", spaHandler(webDir)))
+		mux.Handle("/", http.RedirectHandler("/ui/", http.StatusFound))
+	}
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

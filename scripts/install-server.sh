@@ -164,6 +164,38 @@ chmod +x "$SERVER_BIN"
 chown "$OSB_USER:$OSB_USER" "$SERVER_BIN"
 ok "Server binary ready: $SERVER_BIN"
 
+# ── Step 4b: Web UI (optional — pre-built or from source) ────────────────────
+
+info "Step 4b/6: Installing Web UI..."
+WEB_UI_DIR="$OSB_INSTALL_DIR/web-ui"
+mkdir -p "$WEB_UI_DIR"
+
+# Try to download pre-built web UI (future releases will publish it)
+WEB_UI_URL="https://github.com/cerberus8484/opensourcebackup/releases/download/${OSB_VERSION}/web-ui.tar.gz"
+if curl -fsSL --head "$WEB_UI_URL" &>/dev/null; then
+  curl -fsSL "$WEB_UI_URL" | tar -xz -C "$WEB_UI_DIR"
+  ok "Web UI downloaded"
+else
+  # Build from source
+  if command -v node &>/dev/null; then
+    cd /tmp
+    git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git osb-web-build 2>/dev/null || true
+    if [ -d osb-web-build/web ]; then
+      cd osb-web-build/web
+      VITE_API_URL="" npm install --silent
+      npm run build --silent
+      cp -r dist/. "$WEB_UI_DIR/"
+      ok "Web UI built from source"
+    fi
+    cd /; rm -rf /tmp/osb-web-build
+  else
+    warn "Node.js not found — Web UI will not be served. Install node and re-run."
+    warn "Access the API directly: http://${LOCAL_IP}:${OSB_PORT}/health"
+  fi
+fi
+
+chown -R "$OSB_USER:$OSB_USER" "$WEB_UI_DIR" 2>/dev/null || true
+
 # ── Step 5: Migrations ───────────────────────────────────────────────────────
 
 info "Step 5/6: Running database migrations..."
@@ -194,6 +226,7 @@ cat > "/etc/opensourcebackup/server.env" <<EOF
 DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}?sslmode=disable
 LISTEN_ADDR=:${OSB_PORT}
 CORS_ORIGIN=*
+WEB_UI_DIR=${WEB_UI_DIR}
 # TLS (optional — fill in to enable HTTPS)
 TLS_CERT_FILE=
 TLS_KEY_FILE=
@@ -232,45 +265,63 @@ sleep 3
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 LOCAL_IP=$(hostname -I | awk '{print $1}')
-echo ""
-echo -e "${GREEN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Installation complete!                          ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "  Control Plane:  ${CYAN}http://${LOCAL_IP}:${OSB_PORT}${NC}"
-echo -e "  Health check:   ${CYAN}http://${LOCAL_IP}:${OSB_PORT}/health${NC}"
-echo ""
-echo -e "  ${YELLOW}Next steps:${NC}"
-echo -e "  1. Open the Web-UI (run on your laptop):"
-echo -e "     ${CYAN}VITE_API_URL=http://${LOCAL_IP}:${OSB_PORT} npm run dev${NC}"
-echo ""
-echo -e "  2. Register a system + generate enrollment token:"
-echo -e "     ${CYAN}curl -X POST http://${LOCAL_IP}:${OSB_PORT}/v1/systems \\${NC}"
-echo -e "     ${CYAN}  -d '{\"Hostname\":\"my-system\",\"RiskClass\":\"standard\"}'${NC}"
-echo ""
-echo -e "  3. Install agent on target systems:"
-echo -e "     ${CYAN}CONTROL_PLANE_URL=http://${LOCAL_IP}:${OSB_PORT} \\${NC}"
-echo -e "     ${CYAN}ENROLLMENT_TOKEN=<token> \\${NC}"
-echo -e "     ${CYAN}RESTIC_PASSWORD=<password> \\${NC}"
-echo -e "     ${CYAN}RESTIC_REPO=<path-or-s3-url> \\${NC}"
-echo -e "     ${CYAN}./opensourcebackup-agent${NC}"
-echo ""
-echo -e "  ${YELLOW}Logs:${NC}  journalctl -u opensourcebackup -f"
-echo -e "  ${YELLOW}Stop:${NC}  systemctl stop opensourcebackup"
-echo ""
 
-# Save credentials
-cat > /root/opensourcebackup-credentials.txt <<EOF
+# Save credentials file
+mkdir -p /etc/opensourcebackup
+cat > /root/opensourcebackup-credentials.txt <<CREDS
+# ============================================================
 # OpenSourceBackup — Installation Credentials
-# $(date)
+# Installed: $(date)
+# KEEP THIS FILE SECURE — contains database password
+# ============================================================
 
+# Web UI + API
 CONTROL_PLANE_URL=http://${LOCAL_IP}:${OSB_PORT}
+WEB_UI=http://${LOCAL_IP}:${OSB_PORT}/ui/
 
-DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}?sslmode=disable
+# Database
+DB_HOST=127.0.0.1:5432
 DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 DB_NAME=${DB_NAME}
-EOF
+
+# Note: No default username/password yet — Auth (RBAC) comes in a later release.
+# The API is currently accessible without login (for internal/trusted networks).
+# DO NOT expose port ${OSB_PORT} to the internet without TLS + Auth.
+CREDS
 chmod 600 /root/opensourcebackup-credentials.txt
+
+echo ""
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║           ✓  OpenSourceBackup — Installation Complete        ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║                                                              ║${NC}"
+echo -e "${GREEN}║   Web Dashboard:  ${CYAN}http://${LOCAL_IP}:${OSB_PORT}/ui/${GREEN}                  ║${NC}"
+echo -e "${GREEN}║   API:            ${CYAN}http://${LOCAL_IP}:${OSB_PORT}/health${GREEN}               ║${NC}"
+echo -e "${GREEN}║                                                              ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║   Login                                                      ║${NC}"
+echo -e "${GREEN}║   Username:  ${YELLOW}(not required yet — Auth in next release)${GREEN}     ║${NC}"
+echo -e "${GREEN}║   Password:  ${YELLOW}(not required yet)${GREEN}                            ║${NC}"
+echo -e "${GREEN}║                                                              ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║   ⚠  IMPORTANT: API has no auth yet                         ║${NC}"
+echo -e "${GREEN}║   Only use in trusted/private networks (Proxmox LAN)        ║${NC}"
+echo -e "${GREEN}║   Auth (RBAC + Login) comes in the next major release       ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  ${YELLOW}Next step — install the agent on a system to back up:${NC}"
+echo ""
+echo -e "  ${CYAN}CONTROL_PLANE_URL=http://${LOCAL_IP}:${OSB_PORT} \\${NC}"
+echo -e "  ${CYAN}ENROLLMENT_TOKEN=<token-from-dashboard> \\${NC}"
+echo -e "  ${CYAN}RESTIC_PASSWORD=<your-backup-password> \\${NC}"
+echo -e "  ${CYAN}RESTIC_REPO=/mnt/your-backup-target \\${NC}"
+echo -e "  ${CYAN}bash <(curl -fsSL http://${LOCAL_IP}:${OSB_PORT}/scripts/install-agent.sh)${NC}"
+echo ""
+echo -e "  ${YELLOW}Manage service:${NC}"
+echo -e "  Logs:     ${CYAN}journalctl -u opensourcebackup -f${NC}"
+echo -e "  Restart:  ${CYAN}systemctl restart opensourcebackup${NC}"
+echo -e "  Stop:     ${CYAN}systemctl stop opensourcebackup${NC}"
+echo ""
 echo -e "  ${YELLOW}Credentials saved to:${NC} /root/opensourcebackup-credentials.txt"
 echo ""
