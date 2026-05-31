@@ -92,6 +92,48 @@ func (c *Client) FailJob(ctx context.Context, jobID uuid.UUID, reason string) er
 	return nil
 }
 
+// ClaimNextRestoreTest claims the next pending restore test for this system.
+func (c *Client) ClaimNextRestoreTest(ctx context.Context) (*catalog.RestoreTest, error) {
+	var tests []catalog.RestoreTest
+	if err := c.get(ctx, c.baseURL+"/v1/agent/restore-tests", &tests); err != nil {
+		return nil, fmt.Errorf("claim restore test: %w", err)
+	}
+	if len(tests) == 0 {
+		return nil, catalog.ErrNotFound
+	}
+	return &tests[0], nil
+}
+
+// GetSnapshot returns the snapshot with the given ID.
+func (c *Client) GetSnapshot(ctx context.Context, id uuid.UUID) (*catalog.Snapshot, error) {
+	url := fmt.Sprintf("%s/v1/agent/snapshots/%s", c.baseURL, id)
+	var s catalog.Snapshot
+	if err := c.get(ctx, url, &s); err != nil {
+		return nil, fmt.Errorf("get snapshot %s: %w", id, err)
+	}
+	return &s, nil
+}
+
+// CompleteRestoreTest marks a restore test as successful.
+func (c *Client) CompleteRestoreTest(ctx context.Context, id uuid.UUID, files int, bytes int64) error {
+	url := fmt.Sprintf("%s/v1/agent/restore-tests/%s/complete", c.baseURL, id)
+	body := map[string]any{"verified_files": files, "verified_bytes": bytes}
+	if err := c.put(ctx, url, body); err != nil {
+		return fmt.Errorf("complete restore test %s: %w", id, err)
+	}
+	return nil
+}
+
+// FailRestoreTest marks a restore test as failed.
+func (c *Client) FailRestoreTest(ctx context.Context, id uuid.UUID, reason string) error {
+	url := fmt.Sprintf("%s/v1/agent/restore-tests/%s/fail", c.baseURL, id)
+	body := map[string]any{"error_summary": reason}
+	if err := c.put(ctx, url, body); err != nil {
+		return fmt.Errorf("fail restore test %s: %w", id, err)
+	}
+	return nil
+}
+
 // Enroll exchanges a one-time enrollment token for a long-lived agent token.
 func (c *Client) Enroll(ctx context.Context, enrollmentToken string) (string, error) {
 	body := map[string]string{"enrollment_token": enrollmentToken}

@@ -59,6 +59,19 @@ func (s *stubCP) FailJob(_ context.Context, id uuid.UUID, reason string) error {
 	return nil
 }
 
+func (s *stubCP) ClaimNextRestoreTest(_ context.Context) (*catalog.RestoreTest, error) {
+	return nil, catalog.ErrNotFound
+}
+func (s *stubCP) GetSnapshot(_ context.Context, _ uuid.UUID) (*catalog.Snapshot, error) {
+	return nil, catalog.ErrNotFound
+}
+func (s *stubCP) CompleteRestoreTest(_ context.Context, _ uuid.UUID, _ int, _ int64) error {
+	return nil
+}
+func (s *stubCP) FailRestoreTest(_ context.Context, _ uuid.UUID, _ string) error {
+	return nil
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 func TestAgent_FailsJob_WhenPolicyHasNoRepository(t *testing.T) {
@@ -188,6 +201,18 @@ func (f *failOnceCP) CompleteJob(ctx context.Context, id uuid.UUID, s string, b 
 }
 func (f *failOnceCP) FailJob(ctx context.Context, id uuid.UUID, r string) error {
 	return f.inner.FailJob(ctx, id, r)
+}
+func (f *failOnceCP) ClaimNextRestoreTest(ctx context.Context) (*catalog.RestoreTest, error) {
+	return f.inner.ClaimNextRestoreTest(ctx)
+}
+func (f *failOnceCP) GetSnapshot(ctx context.Context, id uuid.UUID) (*catalog.Snapshot, error) {
+	return f.inner.GetSnapshot(ctx, id)
+}
+func (f *failOnceCP) CompleteRestoreTest(ctx context.Context, id uuid.UUID, fi int, b int64) error {
+	return f.inner.CompleteRestoreTest(ctx, id, fi, b)
+}
+func (f *failOnceCP) FailRestoreTest(ctx context.Context, id uuid.UUID, r string) error {
+	return f.inner.FailRestoreTest(ctx, id, r)
 }
 
 func runBriefly(t *testing.T, cp agent.ControlPlaneClient) {

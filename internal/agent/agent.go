@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,19 +18,26 @@ import (
 // ControlPlaneClient is the interface the agent uses to talk to the control plane.
 // Defined here (DIP) so the agent package does not import the concrete HTTP client.
 type ControlPlaneClient interface {
+	// Backup jobs
 	ListPendingJobs(ctx context.Context) ([]catalog.BackupJob, error)
 	GetPolicy(ctx context.Context, id uuid.UUID) (*catalog.BackupPolicy, error)
 	StartJob(ctx context.Context, jobID uuid.UUID) error
 	CompleteJob(ctx context.Context, jobID uuid.UUID, snapshotID string, bytesUploaded int64, paths []string) error
 	FailJob(ctx context.Context, jobID uuid.UUID, reason string) error
+	// Restore tests
+	ClaimNextRestoreTest(ctx context.Context) (*catalog.RestoreTest, error)
+	GetSnapshot(ctx context.Context, id uuid.UUID) (*catalog.Snapshot, error)
+	CompleteRestoreTest(ctx context.Context, id uuid.UUID, files int, bytes int64) error
+	FailRestoreTest(ctx context.Context, id uuid.UUID, reason string) error
 }
 
 // Config holds all runtime parameters for the agent.
 type Config struct {
-	PollInterval   time.Duration
-	ResticBin      string
-	ResticPassword string
-	ResticRepo     string
+	PollInterval    time.Duration
+	ResticBin       string
+	ResticPassword  string
+	ResticRepo      string
+	RestoreTestRoot string // sandbox root for restore tests
 }
 
 // Agent polls the control plane for pending jobs and executes them.
@@ -76,18 +84,80 @@ func (a *Agent) Run(ctx context.Context) error {
 }
 
 func (a *Agent) poll(ctx context.Context) error {
+	// Poll backup jobs
 	jobs, err := a.cp.ListPendingJobs(ctx)
 	if err != nil {
 		if isUnauthorized(err) {
 			a.log.Error("agent token rejected — re-enrollment required")
 			return err
 		}
-		a.log.Warn("poll failed", "error", err)
-		return nil // transient error — keep polling
+		a.log.Warn("poll jobs failed", "error", err)
+		return nil
 	}
 	for _, job := range jobs {
 		a.executeJob(ctx, job)
 	}
+
+	// Poll restore tests
+	if err := a.executeNextRestoreTest(ctx); err != nil && isUnauthorized(err) {
+		return err
+	}
+	return nil
+}
+
+func (a *Agent) executeNextRestoreTest(ctx context.Context) error {
+	rt, err := a.cp.ClaimNextRestoreTest(ctx)
+	if err != nil {
+		if isUnauthorized(err) {
+			return err
+		}
+		// ErrNotFound = no pending restore test — normal
+		return nil
+	}
+
+	log := a.log.With("restore_test_id", rt.ID, "snapshot_id", rt.SnapshotID)
+	log.Info("restore test started")
+
+	root := a.cfg.RestoreTestRoot
+	if root == "" {
+		root = filepath.Join("data", "restore-tests")
+	}
+	target := filepath.Join(root, rt.ID.String())
+	if rt.TargetPath != nil && *rt.TargetPath != "" {
+		target = *rt.TargetPath
+	}
+
+	snap, err := a.cp.GetSnapshot(ctx, rt.SnapshotID)
+	if err != nil {
+		log.Error("could not load snapshot for restore test", "error", err)
+		a.cp.FailRestoreTest(ctx, rt.ID, fmt.Sprintf("snapshot lookup: %s", err)) //nolint:errcheck
+		return nil
+	}
+
+	result, err := a.runner.Restore(ctx, restic.RestoreOptions{
+		Repo:        a.cfg.ResticRepo,
+		Password:    a.cfg.ResticPassword,
+		SnapshotID:  snap.EngineSnapshotID,
+		TargetPath:  target,
+		RestoreRoot: root,
+	})
+	if err != nil {
+		log.Error("restore test failed", "error", err)
+		if failErr := a.cp.FailRestoreTest(ctx, rt.ID, err.Error()); failErr != nil {
+			log.Error("fail restore test update failed", "error", failErr)
+		}
+		return nil
+	}
+
+	if err := a.cp.CompleteRestoreTest(ctx, rt.ID, result.VerifiedFiles, result.VerifiedBytes); err != nil {
+		log.Error("complete restore test update failed", "error", err)
+		return nil
+	}
+	log.Info("restore test completed",
+		"verified_files", result.VerifiedFiles,
+		"verified_bytes", result.VerifiedBytes,
+		"target", result.TargetPath,
+	)
 	return nil
 }
 

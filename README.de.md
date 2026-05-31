@@ -2,7 +2,7 @@
 
 > Open-Source Backup Control Plane mit nachweisbarer Wiederherstellbarkeit
 
-> **Backups erstellen ist einfach. Wiederherstellbarkeit beweisen ist der Unterschied.**
+> **Backups zu erstellen ist einfach. Wiederherstellbarkeit zu beweisen ist der Unterschied.**
 
 🇩🇪 Deutsch | 🇬🇧 [English](README.md)
 

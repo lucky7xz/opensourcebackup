@@ -38,12 +38,18 @@ func main() {
 		}
 	}
 
+	restoreRoot := os.Getenv("RESTORE_TEST_ROOT")
+	if restoreRoot == "" {
+		restoreRoot = "data/restore-tests"
+	}
+
 	cp := agentclient.New(controlPlaneURL, token)
 	a := agent.New(agent.Config{
-		PollInterval:   poll,
-		ResticBin:      os.Getenv("RESTIC_BIN"),
-		ResticPassword: resticPassword,
-		ResticRepo:     resticRepo,
+		PollInterval:    poll,
+		ResticBin:       os.Getenv("RESTIC_BIN"),
+		ResticPassword:  resticPassword,
+		ResticRepo:      resticRepo,
+		RestoreTestRoot: restoreRoot,
 	}, cp, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

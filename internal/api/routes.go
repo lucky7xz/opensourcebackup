@@ -26,6 +26,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/start", h.startAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/complete", h.completeAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/fail", h.failAgentJob)
+	// Snapshot read for restore tests (agent needs engine_snapshot_id)
+	agentMux.HandleFunc("GET /v1/agent/snapshots/{id}", h.getSnapshot)
+	// Restore tests
+	agentMux.HandleFunc("GET /v1/agent/restore-tests", h.listAgentRestoreTests)
+	agentMux.HandleFunc("PUT /v1/agent/restore-tests/{id}/complete", h.completeAgentRestoreTest)
+	agentMux.HandleFunc("PUT /v1/agent/restore-tests/{id}/fail", h.failAgentRestoreTest)
 	mux.Handle("/v1/agent/", AgentAuth(h.agentTokens)(agentMux))
 
 	mux.HandleFunc("GET /v1/systems", h.listSystems)

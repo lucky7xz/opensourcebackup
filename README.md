@@ -4,7 +4,7 @@
 
 🇩🇪 [Deutsche Version](README.de.md) | 🇬🇧 English
 
-> **Backups creating is easy. Proving recoverability is the difference.**
+> **Creating backups is easy. Proving recoverability is the difference.**
 
 ---
 

@@ -6,7 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,13 +30,28 @@ type BackupResult struct {
 	FilesChanged int
 }
 
+// RestoreOptions configures a restic restore run.
+type RestoreOptions struct {
+	Repo        string
+	Password    string
+	SnapshotID  string
+	TargetPath  string // must be under RestoreRoot
+	RestoreRoot string // safety boundary — target must be under this path
+}
+
+// RestoreResult holds the verified file count and byte sum after restore.
+type RestoreResult struct {
+	TargetPath    string
+	VerifiedFiles int
+	VerifiedBytes int64
+}
+
 // Runner executes restic commands.
 type Runner struct {
-	bin string // path to the restic binary
+	bin string
 }
 
 // New creates a Runner using the given restic binary path.
-// Pass "restic" to rely on PATH.
 func New(bin string) *Runner {
 	if bin == "" {
 		bin = "restic"
@@ -49,11 +67,92 @@ func (r *Runner) Backup(ctx context.Context, opts BackupOptions) (*BackupResult,
 	return r.runBackup(ctx, opts)
 }
 
+// Restore runs restic restore into a validated sandbox directory and
+// counts the restored files and bytes.
+func (r *Runner) Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
+	if err := validateRestorePath(opts.TargetPath, opts.RestoreRoot); err != nil {
+		return nil, fmt.Errorf("restore path validation: %w", err)
+	}
+	if err := os.MkdirAll(opts.TargetPath, 0700); err != nil {
+		return nil, fmt.Errorf("create restore target: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, r.bin,
+		"-r", opts.Repo,
+		"restore", opts.SnapshotID,
+		"--target", opts.TargetPath,
+	)
+	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+opts.Password)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("restic restore: %w — %s", err, bytes.TrimSpace(out))
+	}
+
+	// Walk target and count restored files + bytes independently of restic output.
+	files, totalBytes, walkErr := countFiles(opts.TargetPath)
+	if walkErr != nil {
+		return nil, fmt.Errorf("counting restored files: %w", walkErr)
+	}
+
+	return &RestoreResult{
+		TargetPath:    opts.TargetPath,
+		VerifiedFiles: files,
+		VerifiedBytes: totalBytes,
+	}, nil
+}
+
+// validateRestorePath ensures the target is non-empty, not a dangerous root,
+// and is located under the configured RestoreRoot.
+func validateRestorePath(target, root string) error {
+	if strings.TrimSpace(target) == "" {
+		return fmt.Errorf("target path is empty")
+	}
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return err
+	}
+	// Reject filesystem roots
+	if abs == "/" || abs == filepath.VolumeName(abs)+string(filepath.Separator) {
+		return fmt.Errorf("target path %q is a filesystem root — too dangerous", abs)
+	}
+	if root != "" {
+		rootAbs, err := filepath.Abs(root)
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(abs, rootAbs+string(filepath.Separator)) && abs != rootAbs {
+			return fmt.Errorf("target path %q must be under restore root %q", abs, rootAbs)
+		}
+	}
+	return nil
+}
+
+// countFiles walks dir and returns the number of regular files and their total size.
+func countFiles(dir string) (int, int64, error) {
+	var count int
+	var total int64
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		count++
+		total += info.Size()
+		return nil
+	})
+	return count, total, err
+}
+
 func (r *Runner) initRepo(ctx context.Context, opts BackupOptions) error {
 	cmd := r.cmd(ctx, opts, "init")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		// Ignore: repo already initialized
 		if strings.Contains(string(out), "already") ||
 			strings.Contains(string(out), "config file already exists") {
 			return nil
@@ -114,7 +213,6 @@ func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResu
 	return result, nil
 }
 
-// cmd builds an exec.Cmd for the given restic subcommand with repo and password set.
 func (r *Runner) cmd(ctx context.Context, opts BackupOptions, args ...string) *exec.Cmd {
 	all := append([]string{"-r", opts.Repo}, args...)
 	cmd := exec.CommandContext(ctx, r.bin, all...)

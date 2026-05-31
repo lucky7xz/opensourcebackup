@@ -20,6 +20,10 @@ type RestoreTestStore interface {
 	Update(ctx context.Context, rt *RestoreTest) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	HasSuccessfulTest(ctx context.Context, snapshotID uuid.UUID) (bool, error)
+	// ClaimNextPending atomically claims the next pending restore test for the
+	// given system (FOR UPDATE SKIP LOCKED) and marks it running.
+	// Returns ErrNotFound when no pending test exists.
+	ClaimNextPending(ctx context.Context, systemID uuid.UUID) (*RestoreTest, error)
 }
 
 type pgRestoreTestStore struct {
@@ -124,6 +128,30 @@ func (s *pgRestoreTestStore) Delete(ctx context.Context, id uuid.UUID) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ClaimNextPending atomically claims the next pending restore test for the given system.
+func (s *pgRestoreTestStore) ClaimNextPending(ctx context.Context, systemID uuid.UUID) (*RestoreTest, error) {
+	row := s.db.pool.QueryRow(ctx, `
+		UPDATE restore_tests
+		SET status = 'running', started_at = NOW(), updated_at = NOW()
+		WHERE id = (
+			SELECT id FROM restore_tests
+			WHERE system_id = $1 AND status = 'pending'
+			ORDER BY created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, snapshot_id, system_id, repository_id, status, target_path,
+		          started_at, finished_at, verified_files, verified_bytes, error_summary,
+		          created_at, updated_at`,
+		pgtype.UUID{Bytes: systemID, Valid: true},
+	)
+	rt, err := scanRestoreTest(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return rt, err
 }
 
 // HasSuccessfulTest returns true if the snapshot has at least one successful restore test.

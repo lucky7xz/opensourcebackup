@@ -332,6 +332,10 @@ func (s *stubRestoreTestStore) Delete(_ context.Context, id uuid.UUID) error {
 	delete(s.tests, id)
 	return nil
 }
+func (s *stubRestoreTestStore) ClaimNextPending(_ context.Context, _ uuid.UUID) (*catalog.RestoreTest, error) {
+	return nil, catalog.ErrNotFound
+}
+
 func (s *stubRestoreTestStore) HasSuccessfulTest(_ context.Context, snapshotID uuid.UUID) (bool, error) {
 	for _, rt := range s.tests {
 		if rt.SnapshotID == snapshotID && rt.Status == "success" {
