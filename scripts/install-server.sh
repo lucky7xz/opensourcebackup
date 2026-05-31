@@ -53,10 +53,21 @@ else
   warn "Continuing anyway — manual fixes may be needed."
 fi
 
-# Generate secure passwords
-DB_PASSWORD=$(openssl rand -hex 32)
 DB_USER="opensourcebackup"
 DB_NAME="opensourcebackup"
+CREDS_FILE="/etc/opensourcebackup/.db_password"
+
+# Generate password once and persist it — never regenerate on re-runs
+mkdir -p /etc/opensourcebackup
+if [ -f "$CREDS_FILE" ]; then
+  DB_PASSWORD=$(cat "$CREDS_FILE")
+  ok "Using existing database password"
+else
+  DB_PASSWORD=$(openssl rand -hex 32)
+  echo "$DB_PASSWORD" > "$CREDS_FILE"
+  chmod 600 "$CREDS_FILE"
+  ok "New database password generated"
+fi
 
 # ── Step 1: Docker ────────────────────────────────────────────────────────────
 
