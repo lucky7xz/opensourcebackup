@@ -67,7 +67,7 @@ function container(size: number): CSSProperties {
   return { width: size, height: size, flexShrink: 0 }
 }
 
-function centerStyle(size: number): CSSProperties {
+function centerStyle(_size: number): CSSProperties {
   return {
     position: 'absolute', inset: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',

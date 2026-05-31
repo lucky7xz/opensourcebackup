@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import { api, post, type System } from '../api'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 
-const VERSION = 'v0.1.0'
-
 const PLATFORMS = [
   { id: 'windows-amd64',  label: 'Windows',          icon: '🪟', sub: 'Windows Server / Workstation (64-bit)' },
   { id: 'linux-amd64',    label: 'Linux x64',         icon: '🐧', sub: 'Debian, Ubuntu, RHEL, CentOS (64-bit)' },
