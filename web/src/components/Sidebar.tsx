@@ -37,9 +37,15 @@ const NAV = [
     ],
   },
   {
+    label: 'COMPLIANCE',
+    links: [
+      { to: '/evidence',      label: 'Evidence',      icon: '🔍' },
+      { to: '/alerts',        label: 'Alerts',        icon: '🔔' },
+    ],
+  },
+  {
     label: 'COMING SOON',
     links: [
-      { to: '/alerts',        label: 'Alerts',        icon: '🔔', soon: true },
       { to: '/reports',       label: 'Reports',       icon: '📄', soon: true },
     ],
   },
