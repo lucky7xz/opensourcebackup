@@ -6,30 +6,33 @@ import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const TYPES = [
-  { value: 'local',      label: 'Local Path',   hint: 'Local disk, mounted volume, USB drive', icon: '💾' },
-  { value: 'nas-nfs',    label: 'NAS / NFS',    hint: 'Synology, QNAP, TrueNAS, Unraid via NFS', icon: '🗄' },
-  { value: 'nas-smb',    label: 'NAS / SMB',    hint: 'Windows Share, Synology, QNAP via SMB/CIFS', icon: '🗄' },
-  { value: 'minio-s3',   label: 'MinIO / S3',   hint: 'Self-hosted MinIO or AWS S3, GCS, Azure, B2', icon: '☁' },
-  { value: 'restic',     label: 'Restic (REST)', hint: 'Restic REST server — any custom backend', icon: '⚙' },
-  { value: 'borg',       label: 'Borg',          hint: 'Borg via SSH — deduplicated', icon: '🔒' },
-  { value: 'pgbackrest', label: 'pgBackRest',    hint: 'PostgreSQL WAL archiving + PITR', icon: '🐘' },
-  { value: 'velero',     label: 'Velero',        hint: 'Kubernetes cluster backup', icon: '☸' },
+  { value: 'local',      label: 'Local Path',            hint: 'Local disk, USB drive, mounted volume on the agent system', icon: '💾' },
+  { value: 'proxmox',    label: 'Proxmox Storage',       hint: 'Proxmox VE storage: /mnt/pve/Backup, /mnt/pve/NAS, etc.', icon: '🖥' },
+  { value: 'nas-nfs',    label: 'NAS / NFS',             hint: 'Synology, QNAP, TrueNAS, Unraid via NFS mount', icon: '🗄' },
+  { value: 'nas-smb',    label: 'NAS / SMB',             hint: 'Windows Share, Synology, QNAP via SMB/CIFS — e.g. Z:\\BackupFolder', icon: '🗄' },
+  { value: 'minio-s3',   label: 'MinIO / S3',            hint: 'Self-hosted MinIO or AWS S3, GCS, Azure Blob, Backblaze B2', icon: '☁' },
+  { value: 'restic',     label: 'Restic REST Server',    hint: 'Custom Restic REST server — any compatible backend', icon: '⚙' },
+  { value: 'borg',       label: 'Borg (SSH)',            hint: 'Borg Backup via SSH — highly efficient deduplication', icon: '🔒' },
+  { value: 'pgbackrest', label: 'pgBackRest',            hint: 'PostgreSQL only — WAL archiving, Point-in-Time Recovery', icon: '🐘' },
+  { value: 'velero',     label: 'Velero (Kubernetes)',   hint: 'Kubernetes clusters — Deployments, Volumes, ConfigMaps', icon: '☸' },
 ]
 
 const LOCATION_HINTS: Record<string, string> = {
-  'local':      '/mnt/backup/restic-repo  or  /var/backups',
-  'nas-nfs':    'nas-berlin-01:/volume1/backups  →  mount first, then: /mnt/nas-backup/restic-repo',
-  'nas-smb':    '\\\\nas-berlin-01\\backups  →  mount first, then: /mnt/smb-backup/restic-repo',
-  'minio-s3':   's3:http://minio.local:9000/backups  or  s3:s3.amazonaws.com/my-bucket',
+  'local':      'C:\\Backups\\restic-repo  or  /var/backups/restic-repo',
+  'proxmox':    '/mnt/pve/Backup/restic-repo  or  /mnt/pve/NAS/backups  (Proxmox storage path)',
+  'nas-nfs':    '/mnt/nas-backup/restic-repo  (mount first: mount -t nfs nas:/volume1/backups /mnt/nas-backup)',
+  'nas-smb':    'Z:\\OpenSourceBackup  (Windows)  or  /mnt/smb-backup/restic-repo  (Linux)',
+  'minio-s3':   's3:http://minio.local:9000/my-bucket  or  s3:s3.amazonaws.com/my-bucket',
   'restic':     'rest:http://restic-server:8000/repo',
-  'borg':       'ssh://user@host/./backups  or  user@host:/path/to/repo',
-  'pgbackrest': 'path=/var/lib/pgbackrest  or  s3:my-pg-bucket',
-  'velero':     's3://bucket/velero  or  azure://container/velero',
+  'borg':       'ssh://user@host/./backups  or  user@nas-host:/volume1/borg-repo',
+  'pgbackrest': 'path=/var/lib/pgbackrest  or  s3:my-pg-bucket/pgbackrest',
+  'velero':     's3://my-bucket/velero  or  azure://container/velero',
 }
 
 const NAS_NOTE: Record<string, string> = {
-  'nas-nfs': 'Mount the NFS share first on the agent system: mount -t nfs nas-berlin-01:/volume1/backups /mnt/nas-backup',
-  'nas-smb': 'Mount the SMB share first on the agent system: mount -t cifs //nas-berlin-01/backups /mnt/smb-backup -o user=backupuser',
+  'proxmox':  'Proxmox storage is already mounted on the Proxmox host. The agent must run on the Proxmox host or a system with access to this path.',
+  'nas-nfs':  'Mount the NFS share first on the agent system:\n  mount -t nfs nas-server:/volume1/backups /mnt/nas-backup',
+  'nas-smb':  'Windows: Map as a network drive (e.g. Z:).\nLinux: mount -t cifs //nas-server/backups /mnt/smb -o user=backupuser',
 }
 
 export function Repositories() {
@@ -131,7 +134,9 @@ export function Repositories() {
               <div style={s.hint2}>{LOCATION_HINTS[type]}</div>
               {NAS_NOTE[type] && (
                 <div style={s.nasNote}>
-                  ℹ {NAS_NOTE[type]}
+                  {NAS_NOTE[type].split('\n').map((line, i) => (
+                    <div key={i}>{i === 0 ? `ℹ ${line}` : `   ${line}`}</div>
+                  ))}
                 </div>
               )}
             </div>
