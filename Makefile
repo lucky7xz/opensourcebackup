@@ -80,6 +80,16 @@ build-agent-darwin:
 
 build-agent-all: build-agent-windows build-agent-linux build-agent-linux-arm64 build-agent-darwin
 
+build-server-linux:
+	GOOS=linux GOARCH=amd64 go build -o dist/server/$(VERSION)/opensourcebackup-server-linux-amd64 $(CONTROL_PLANE)
+
+build-server-linux-arm64:
+	GOOS=linux GOARCH=arm64 go build -o dist/server/$(VERSION)/opensourcebackup-server-linux-arm64 $(CONTROL_PLANE)
+
+build-server-all: build-server-linux build-server-linux-arm64
+
+build-all: build-agent-all build-server-all
+
 # ── Migrations ──────────────────────────────────────────────────────────────
 # Requires: go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 migrate-up:
