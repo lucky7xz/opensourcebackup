@@ -68,7 +68,7 @@ func TestSecurityHeaders_SetsAllRequiredHeaders(t *testing.T) {
 		"X-Xss-Protection":          "0", // modern browsers: CSP is the real defence
 		"Referrer-Policy":           "strict-origin-when-cross-origin",
 		"Content-Security-Policy":   "default-src 'none'",
-		"Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 	}
 	for header, want := range required {
 		if got := rec.Header().Get(header); got != want {

@@ -92,7 +92,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := security.ClientIP(r)
+	ip := security.ClientIPHashed(r)
 	token, err := h.webAuth.Login(req.Password, ip)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
@@ -137,7 +137,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 			Action:       audit.ActionLogout,
 			ResourceType: audit.ResourceAuth,
 			Actor:        "admin",
-			IP:           security.ClientIP(r),
+			IP:           security.ClientIPHashed(r),
 			Success:      true,
 		})
 	}

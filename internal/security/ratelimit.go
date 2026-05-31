@@ -3,7 +3,6 @@
 package security
 
 import (
-	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -108,7 +107,7 @@ func (l *IPRateLimiter) Stop() {
 func RateLimit(limiter *IPRateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := clientIP(r)
+			ip := clientIPFromRequest(r)
 			if !limiter.Allow(ip) {
 				w.Header().Set("Retry-After", "5")
 				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
@@ -119,48 +118,9 @@ func RateLimit(limiter *IPRateLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-// ClientIP is the exported version for use outside this package.
-func ClientIP(r *http.Request) string { return clientIP(r) }
-
-// clientIP extracts the real client IP, honouring X-Forwarded-For
-// only when the direct connection is from a private/loopback address
-// (i.e. a trusted reverse proxy).
-func clientIP(r *http.Request) string {
-	remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
-
-	if isPrivate(remoteIP) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// Take the first (leftmost) IP — that is the original client.
-			if idx := len(xff); idx > 0 {
-				for i := 0; i < len(xff); i++ {
-					if xff[i] == ',' {
-						return xff[:i]
-					}
-				}
-				return xff
-			}
-		}
-		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			return xri
-		}
-	}
-	return remoteIP
-}
-
-// isPrivate reports whether ip is RFC-1918 / loopback.
-func isPrivate(ip string) bool {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return false
-	}
-	private := []string{
-		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128",
-	}
-	for _, cidr := range private {
-		_, network, _ := net.ParseCIDR(cidr)
-		if network != nil && network.Contains(parsed) {
-			return true
-		}
-	}
-	return false
+// ClientIP extracts the real client IP from the request.
+// Trusts X-Forwarded-For only from private/loopback addresses (reverse proxies).
+// For audit logging use ClientIPHashed instead.
+func ClientIP(r *http.Request) string {
+	return clientIPFromRequest(r)
 }

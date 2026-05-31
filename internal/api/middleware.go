@@ -95,12 +95,17 @@ func SecurityHeaders(next http.Handler) http.Handler {
 func SecurityHeadersCSP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCommonSecurityHeaders(w)
-		// React SPA needs: self (scripts/styles), data URIs (fonts), Google Fonts,
-		// and unsafe-inline for Vite-generated inline styles.
+		// TODO(security): Remove 'unsafe-inline' before production hardening.
+		// Current requirement: Vite's build injects inline styles; Google Fonts CDN
+		// is used for Inter + JetBrains Mono. Roadmap:
+		//   1. Replace Google Fonts with self-hosted font files → drop fonts.googleapis.com
+		//   2. Configure Vite to extract CSS to separate files → drop style unsafe-inline
+		//   3. Use script nonces for any remaining inline scripts → drop script unsafe-inline
+		// Tracking issue: #security-csp-hardening
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+
-				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
+				"script-src 'self' 'unsafe-inline'; "+          // TODO: replace with nonces
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+ // TODO: self-host fonts
 				"font-src 'self' https://fonts.gstatic.com data:; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self'; "+
@@ -114,10 +119,13 @@ func setCommonSecurityHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("X-XSS-Protection", "0") // modern browsers ignore this; CSP is the real defence
+	h.Set("X-XSS-Protection", "0")    // deprecated; modern browsers ignore it — CSP is the real defence
 	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-	h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+	// HSTS without preload: preload requires domain registration at hstspreload.org
+	// and locks all subdomains permanently. Enable preload only after TLS is fully
+	// configured and the domain is stable.
+	h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 }
 
 // RequestBodyLimit caps incoming request bodies at maxBytes.

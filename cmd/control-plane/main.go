@@ -111,12 +111,13 @@ func main() {
 	globalLimiter := security.NewIPRateLimiter(globalRatePerSec, globalBurst)
 
 	// Middleware chain (outer → inner):
-	//   Timeout → Logging → RateLimit → WebAuth → SecurityHeaders → CORS → BodyLimit → Recovery
+	//   Timeout → Logging → RateLimit → WebAuth → CSRF → SecurityHeaders → CORS → BodyLimit → Recovery
 	httpHandler := api.Chain(mux,
 		api.Recovery(logger),
 		api.RequestBodyLimit(maxRequestBodyBytes),
 		api.CORS(corsOrigin),
 		api.SecurityHeadersCSP,
+		security.CSRFProtect,           // Double-Submit Cookie; exempt: /v1/agent/*, /auth/login
 		api.WebAuth(webAuth, auditStore),
 		security.RateLimit(globalLimiter),
 		api.Logging(logger),

@@ -51,7 +51,7 @@ func (h *Handler) handleGDPRExport(w http.ResponseWriter, r *http.Request) {
 		ResourceType: audit.ResourceSystem,
 		ResourceID:   id,
 		Actor:        "admin",
-		IP:           security.ClientIP(r),
+		IP:           security.ClientIPHashed(r),
 		Details:      "GDPR data export requested",
 		Success:      true,
 	})
@@ -90,7 +90,7 @@ func (h *Handler) handleGDPRPurge(w http.ResponseWriter, r *http.Request) {
 		ResourceType: audit.ResourceSystem,
 		ResourceID:   id,
 		Actor:        "admin",
-		IP:           security.ClientIP(r),
+		IP:           security.ClientIPHashed(r),
 		Details:      "GDPR Art. 17 erasure request — system: " + sys.Hostname,
 		Success:      true,
 	})
