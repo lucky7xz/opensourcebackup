@@ -179,7 +179,7 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
             {/* Register new system inline */}
             <div style={s.newSysToggle}>
               <button onClick={() => { setShowNewSys(v => !v); setErr(null) }} style={s.addBtn}>
-                {showNewSys ? '▲ Cancel' : '+ New Agent'}
+                {showNewSys ? '▲ Cancel' : '+ Enroll Agent'}
               </button>
             </div>
 
