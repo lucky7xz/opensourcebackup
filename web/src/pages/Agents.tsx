@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, post, type System } from '../api'
+import { api, type System } from '../api'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const VERSION = 'v0.1.0'
@@ -16,7 +16,6 @@ export function Agents() {
   const [step,       setStep]       = useState<Step>('system')
   const [systems,    setSystems]    = useState<System[]>([])
   const [selSystem,  setSelSystem]  = useState<System|null>(null)
-  const [newHostname,setNewHostname]= useState('')
   const [platform,   setPlatform]   = useState('')
   const [resticRepo, setResticRepo] = useState('C:/tmp/backup-repo')
   const [resticPass, setResticPass] = useState('')
@@ -30,21 +29,10 @@ export function Agents() {
 
   // ── Step helpers ───────────────────────────────────────────────────────────
 
-  async function goToPlatform() {
-    setErr(null); setLoading(true)
-    try {
-      let sys = selSystem
-      if (!sys && newHostname.trim()) {
-        const created = await post<System>('/v1/systems', { Hostname: newHostname.trim(), RiskClass: 'standard' })
-        sys = created
-        setSystems(prev => [...prev, created])
-        setSelSystem(created)
-      }
-      if (!sys) { setErr('Select an existing system or enter a hostname.'); return }
-      setSelSystem(sys)
-      setStep('platform')
-    } catch { setErr('Could not create system. Is the control plane running?') }
-    finally { setLoading(false) }
+  function goToPlatform() {
+    if (!selSystem) { setErr('Please select a system.'); return }
+    setErr(null)
+    setStep('platform')
   }
 
   function goToConfig() {
@@ -142,43 +130,40 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
         {/* ── Step 1: System ── */}
         {step === 'system' && (
           <>
-            <h2 style={s.stepTitle}>Which system should be backed up?</h2>
-            <p style={s.stepSub}>Select an existing system or register a new one.</p>
+            <h2 style={s.stepTitle}>Which system should the agent run on?</h2>
+            <p style={s.stepSub}>
+              Select a registered system. To add a new system, go to{' '}
+              <a href="/systems" style={{color:'var(--accent)'}}>Systems</a> first.
+            </p>
 
-            {systems.length > 0 && (
+            {systems.length === 0 ? (
+              <div style={s.emptyHint}>
+                No systems registered yet.{' '}
+                <a href="/systems" style={{color:'var(--accent)'}}>Go to Systems →</a>{' '}
+                to register your first system.
+              </div>
+            ) : (
               <div style={s.section}>
-                <label style={s.label}>Existing systems</label>
                 <div style={s.systemList}>
                   {systems.map(sys => (
-                    <div key={sys.ID} onClick={() => { setSelSystem(sys); setNewHostname('') }}
+                    <div key={sys.ID} onClick={() => setSelSystem(sys)}
                       style={{...s.systemItem, ...(selSystem?.ID===sys.ID ? s.systemItemOn : {})}}>
                       <span style={s.sysIcon}>🖥</span>
                       <div>
                         <div style={{fontWeight:600, color:'var(--text)'}}>{sys.Hostname}</div>
                         <div style={{fontSize:11, color:'var(--text-dim)'}}>{sys.OS ?? 'unknown OS'} · {sys.RiskClass}</div>
                       </div>
+                      {selSystem?.ID===sys.ID && <span style={s.checkmark}>✓</span>}
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            <div style={s.divider}>or register a new system</div>
-
-            <div style={s.section}>
-              <label style={s.label}>Hostname</label>
-              <input
-                style={s.input}
-                placeholder="e.g. web-server-01 or 192.168.1.10"
-                value={newHostname}
-                onChange={e => { setNewHostname(e.target.value); setSelSystem(null) }}
-              />
-            </div>
-
             {err && <div style={s.err}>{err}</div>}
             <div style={s.actions}>
-              <button onClick={goToPlatform} disabled={loading || (!selSystem && !newHostname.trim())} style={s.primary}>
-                {loading ? 'Creating…' : 'Continue →'}
+              <button onClick={goToPlatform} disabled={!selSystem} style={s.primary}>
+                Continue →
               </button>
             </div>
           </>
@@ -394,9 +379,11 @@ const s: Record<string, React.CSSProperties> = {
   hint:         { fontSize:11, color:'var(--text-dim)', marginTop:5 },
   divider:      { textAlign:'center' as const, color:'var(--text-dim)', fontSize:12, margin:'16px 0', position:'relative' as const },
   systemList:   { display:'flex', flexDirection:'column' as const, gap:8 },
-  systemItem:   { display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.12s' },
+  systemItem:   { display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.12s' },
   systemItemOn: { borderColor:'var(--accent)', background:'var(--accent-dim)' },
   sysIcon:      { fontSize:20 },
+  checkmark:    { marginLeft:'auto', color:'var(--accent)', fontWeight:700, fontSize:16 },
+  emptyHint:    { background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:8, padding:'14px 16px', fontSize:13, color:'var(--text-muted)' },
   platformGrid: { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:8 },
   platformCard: { padding:'20px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', textAlign:'center' as const, transition:'all 0.12s' },
   platformCardOn:{ borderColor:'var(--accent)', background:'var(--accent-dim)' },
