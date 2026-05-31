@@ -4,80 +4,6 @@ import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Sna
 import { StatusBadge } from '../components/StatusBadge'
 import { DonutChart, DonutLegend } from '../components/DonutChart'
 
-// ── Recovery Score ────────────────────────────────────────────────────────────
-
-interface ScoreInput {
-  totalJobs:        number
-  failedJobs:       number
-  failedLast24h:    number
-  totalSnapshots:   number
-  verifiedSnapshots: number
-  failedSnapshots:  number
-}
-
-interface ScoreResult {
-  score:    number          // 0–100
-  label:    string          // 'Excellent' | 'Good' | 'Fair' | 'At Risk'
-  color:    string
-  deductions: { reason: string; points: number }[]
-}
-
-/**
- * Recovery Score MVP — honest, documented, no fake benchmarks.
- *
- * Deductions:
- *  -30  No restore tests at all (0% coverage)
- *  -20  Failed jobs in the last 24 hours
- *  -15  Unverified snapshots exist (partial coverage)
- *  -10  Overall failure rate > 20%
- *
- * Basis: backup success + restore-test coverage.
- * Does NOT include: agent heartbeat, retention, WORM (future).
- */
-function calcRecoveryScore(i: ScoreInput): ScoreResult {
-  const deductions: { reason: string; points: number }[] = []
-  let score = 100
-
-  const restorePct = i.totalSnapshots > 0
-    ? (i.verifiedSnapshots / i.totalSnapshots) * 100
-    : 0
-  const failureRate = i.totalJobs > 0
-    ? (i.failedJobs / i.totalJobs) * 100
-    : 0
-
-  if (i.totalSnapshots > 0 && restorePct === 0) {
-    deductions.push({ reason: 'No snapshots have been restore-tested', points: 30 })
-    score -= 30
-  } else if (i.totalSnapshots > 0 && i.verifiedSnapshots < i.totalSnapshots) {
-    deductions.push({ reason: 'Some snapshots not yet restore-tested', points: 15 })
-    score -= 15
-  }
-
-  if (i.failedLast24h > 0) {
-    deductions.push({ reason: `${i.failedLast24h} failed job${i.failedLast24h > 1 ? 's' : ''} in last 24h`, points: 20 })
-    score -= 20
-  }
-
-  if (failureRate > 20) {
-    deductions.push({ reason: `Overall failure rate ${Math.round(failureRate)}%`, points: 10 })
-    score -= 10
-  }
-
-  score = Math.max(0, score)
-
-  const label = score >= 90 ? 'Excellent'
-    : score >= 75 ? 'Good'
-    : score >= 55 ? 'Fair'
-    : 'At Risk'
-
-  const color = score >= 90 ? 'var(--success)'
-    : score >= 75 ? '#22c55e'
-    : score >= 55 ? 'var(--warning)'
-    : 'var(--error)'
-
-  return { score, label, color, deductions }
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -134,16 +60,6 @@ export function Dashboard() {
   const restoreVerifiedPct = snapshots.length > 0
     ? Math.round((verifiedSnaps.length / snapshots.length) * 100)
     : 0
-
-  // Recovery Score
-  const scoreResult = calcRecoveryScore({
-    totalJobs:        jobs.length,
-    failedJobs,
-    failedLast24h,
-    totalSnapshots:   snapshots.length,
-    verifiedSnapshots: verifiedSnaps.length,
-    failedSnapshots:  failedOnlySnaps.length,
-  })
 
   // ── Agent activity ────────────────────────────────────────────────────────
   // Thresholds: Online ≤ 2min · Idle ≤ 15min · Offline > 15min or never seen
