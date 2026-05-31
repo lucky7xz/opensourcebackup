@@ -1,16 +1,26 @@
 # OpensourceBackup
 
-> Open-Source Backup Control Plane — central orchestration and management system for 100+ systems.
+> Open-Source Backup Control Plane with Restore Assurance
 
 🇩🇪 [Deutsche Version](README.de.md) | 🇬🇧 English
+
+> **Backups creating is easy. Proving recoverability is the difference.**
 
 ---
 
 ## Overview
 
-OpensourceBackup is not a new backup tool. It is a **Backup Control Plane**:
-a platform that orchestrates proven backup engines (Restic, Borg, pgBackRest, Velero),
-manages them centrally, monitors their status, and automatically verifies restore integrity.
+OpensourceBackup orchestrates Restic, Borg, pgBackRest, and Velero across 100+ systems —
+and proves that your data can actually be restored.
+
+The central question answered every day:
+**Are my systems protected — and has a restore been successfully tested?**
+
+```
+System → Policy → Agent → Backup → Snapshot → Restore Test → Evidence
+```
+
+Not just "Backup success ✅" — but **Restore verified ✅, files checked ✅, bytes validated ✅**.
 
 ```
 Sources (Servers, VMs, DBs, Endpoints)

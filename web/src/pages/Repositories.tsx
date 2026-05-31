@@ -6,17 +6,30 @@ import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 
 const TYPES = [
-  { value: 'restic',     label: 'Restic',       hint: 'Local, S3, SFTP, B2, Azure, GCS' },
-  { value: 'borg',       label: 'Borg',          hint: 'SSH / local — deduplicated' },
-  { value: 'pgbackrest', label: 'pgBackRest',    hint: 'PostgreSQL — WAL archiving' },
-  { value: 'velero',     label: 'Velero',        hint: 'Kubernetes cluster backup' },
+  { value: 'local',      label: 'Local Path',   hint: 'Local disk, mounted volume, USB drive', icon: '💾' },
+  { value: 'nas-nfs',    label: 'NAS / NFS',    hint: 'Synology, QNAP, TrueNAS, Unraid via NFS', icon: '🗄' },
+  { value: 'nas-smb',    label: 'NAS / SMB',    hint: 'Windows Share, Synology, QNAP via SMB/CIFS', icon: '🗄' },
+  { value: 'minio-s3',   label: 'MinIO / S3',   hint: 'Self-hosted MinIO or AWS S3, GCS, Azure, B2', icon: '☁' },
+  { value: 'restic',     label: 'Restic (REST)', hint: 'Restic REST server — any custom backend', icon: '⚙' },
+  { value: 'borg',       label: 'Borg',          hint: 'Borg via SSH — deduplicated', icon: '🔒' },
+  { value: 'pgbackrest', label: 'pgBackRest',    hint: 'PostgreSQL WAL archiving + PITR', icon: '🐘' },
+  { value: 'velero',     label: 'Velero',        hint: 'Kubernetes cluster backup', icon: '☸' },
 ]
 
 const LOCATION_HINTS: Record<string, string> = {
-  restic:     's3:http://minio:9000/bucket  or  /local/path  or  sftp:user@host:/path',
-  borg:       'ssh://user@host/./backups  or  /local/path',
-  pgbackrest: 'path=/var/lib/pgbackrest  or  s3:bucket',
-  velero:     's3://bucket/velero  or  azure://container',
+  'local':      '/mnt/backup/restic-repo  or  /var/backups',
+  'nas-nfs':    'nas-berlin-01:/volume1/backups  →  mount first, then: /mnt/nas-backup/restic-repo',
+  'nas-smb':    '\\\\nas-berlin-01\\backups  →  mount first, then: /mnt/smb-backup/restic-repo',
+  'minio-s3':   's3:http://minio.local:9000/backups  or  s3:s3.amazonaws.com/my-bucket',
+  'restic':     'rest:http://restic-server:8000/repo',
+  'borg':       'ssh://user@host/./backups  or  user@host:/path/to/repo',
+  'pgbackrest': 'path=/var/lib/pgbackrest  or  s3:my-pg-bucket',
+  'velero':     's3://bucket/velero  or  azure://container/velero',
+}
+
+const NAS_NOTE: Record<string, string> = {
+  'nas-nfs': 'Mount the NFS share first on the agent system: mount -t nfs nas-berlin-01:/volume1/backups /mnt/nas-backup',
+  'nas-smb': 'Mount the SMB share first on the agent system: mount -t cifs //nas-berlin-01/backups /mnt/smb-backup -o user=backupuser',
 }
 
 export function Repositories() {
@@ -103,6 +116,7 @@ export function Repositories() {
                 {TYPES.map(t => (
                   <div key={t.value} onClick={() => setType(t.value)}
                     style={{...s.typeCard, ...(type===t.value ? s.typeCardOn : {})}}>
+                    <span style={s.typeIcon}>{(t as {icon?:string}).icon ?? '📦'}</span>
                     <div style={s.typeName}>{t.label}</div>
                     <div style={s.typeHint}>{t.hint}</div>
                   </div>
@@ -111,10 +125,15 @@ export function Repositories() {
             </div>
 
             <div style={s.field}>
-              <label style={s.label}>Location <span style={s.req}>*</span></label>
+              <label style={s.label}>Location / Path <span style={s.req}>*</span></label>
               <input style={s.input} value={location} onChange={e => setLocation(e.target.value)}
                 placeholder={LOCATION_HINTS[type]} />
               <div style={s.hint2}>{LOCATION_HINTS[type]}</div>
+              {NAS_NOTE[type] && (
+                <div style={s.nasNote}>
+                  ℹ {NAS_NOTE[type]}
+                </div>
+              )}
             </div>
 
             <div style={s.row2}>
@@ -180,11 +199,13 @@ const s: Record<string, React.CSSProperties> = {
   req:        { color:'var(--error)' },
   hint2:      { fontSize:11, color:'var(--text-dim)', marginTop:4 },
   input:      { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
-  typeGrid:   { display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 },
-  typeCard:   { padding:'10px 12px', borderRadius:7, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.12s' },
+  typeGrid:   { display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 },
+  typeCard:   { padding:'10px 12px', borderRadius:7, border:'1px solid var(--border)', cursor:'pointer', transition:'all 0.12s', textAlign:'center' as const },
   typeCardOn: { borderColor:'var(--accent)', background:'var(--accent-dim)' },
-  typeName:   { fontWeight:600, color:'var(--text)', fontSize:13, marginBottom:2 },
-  typeHint:   { fontSize:11, color:'var(--text-dim)' },
+  typeIcon:   { fontSize:18, display:'block', marginBottom:4 },
+  typeName:   { fontWeight:600, color:'var(--text)', fontSize:12, marginBottom:2 },
+  typeHint:   { fontSize:10, color:'var(--text-dim)' },
+  nasNote:    { marginTop:8, background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:6, padding:'8px 12px', fontSize:11, color:'var(--text-muted)', fontFamily:'var(--font-mono)' },
   toggle:     { display:'flex', alignItems:'center', gap:10, padding:'8px 0', cursor:'pointer' },
   toggleDot:  { width:32, height:18, borderRadius:9, background:'var(--border)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, color:'#fff', transition:'background 0.15s' },
   toggleOn:   { background:'var(--success)' },

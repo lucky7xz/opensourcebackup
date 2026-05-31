@@ -1,6 +1,8 @@
 # OpensourceBackup
 
-> Open-Source Backup Control Plane — zentrales Orchestrierungs- und Verwaltungssystem für 100+ Systeme.
+> Open-Source Backup Control Plane mit nachweisbarer Wiederherstellbarkeit
+
+> **Backups erstellen ist einfach. Wiederherstellbarkeit beweisen ist der Unterschied.**
 
 🇩🇪 Deutsch | 🇬🇧 [English](README.md)
 
