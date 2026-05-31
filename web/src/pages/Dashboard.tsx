@@ -1,10 +1,87 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System } from '../api'
-import { HealthCard, SectionHeader, Card } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
-import { Table } from '../components/Table'
+import { DonutChart, DonutLegend } from '../components/DonutChart'
+
+// ── Recovery Score ────────────────────────────────────────────────────────────
+
+interface ScoreInput {
+  totalJobs:        number
+  failedJobs:       number
+  failedLast24h:    number
+  totalSnapshots:   number
+  verifiedSnapshots: number
+  failedSnapshots:  number
+}
+
+interface ScoreResult {
+  score:    number          // 0–100
+  label:    string          // 'Excellent' | 'Good' | 'Fair' | 'At Risk'
+  color:    string
+  deductions: { reason: string; points: number }[]
+}
+
+/**
+ * Recovery Score MVP — honest, documented, no fake benchmarks.
+ *
+ * Deductions:
+ *  -30  No restore tests at all (0% coverage)
+ *  -20  Failed jobs in the last 24 hours
+ *  -15  Unverified snapshots exist (partial coverage)
+ *  -10  Overall failure rate > 20%
+ *
+ * Basis: backup success + restore-test coverage.
+ * Does NOT include: agent heartbeat, retention, WORM (future).
+ */
+function calcRecoveryScore(i: ScoreInput): ScoreResult {
+  const deductions: { reason: string; points: number }[] = []
+  let score = 100
+
+  const restorePct = i.totalSnapshots > 0
+    ? (i.verifiedSnapshots / i.totalSnapshots) * 100
+    : 0
+  const failureRate = i.totalJobs > 0
+    ? (i.failedJobs / i.totalJobs) * 100
+    : 0
+
+  if (i.totalSnapshots > 0 && restorePct === 0) {
+    deductions.push({ reason: 'No snapshots have been restore-tested', points: 30 })
+    score -= 30
+  } else if (i.totalSnapshots > 0 && i.verifiedSnapshots < i.totalSnapshots) {
+    deductions.push({ reason: 'Some snapshots not yet restore-tested', points: 15 })
+    score -= 15
+  }
+
+  if (i.failedLast24h > 0) {
+    deductions.push({ reason: `${i.failedLast24h} failed job${i.failedLast24h > 1 ? 's' : ''} in last 24h`, points: 20 })
+    score -= 20
+  }
+
+  if (failureRate > 20) {
+    deductions.push({ reason: `Overall failure rate ${Math.round(failureRate)}%`, points: 10 })
+    score -= 10
+  }
+
+  score = Math.max(0, score)
+
+  const label = score >= 90 ? 'Excellent'
+    : score >= 75 ? 'Good'
+    : score >= 55 ? 'Fair'
+    : 'At Risk'
+
+  const color = score >= 90 ? 'var(--success)'
+    : score >= 75 ? '#22c55e'
+    : score >= 55 ? 'var(--warning)'
+    : 'var(--error)'
+
+  return { score, label, color, deductions }
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
+  const navigate = useNavigate()
   const [systems,      setSystems]      = useState<System[]>([])
   const [jobs,         setJobs]         = useState<BackupJob[]>([])
   const [snapshots,    setSnapshots]    = useState<Snapshot[]>([])
@@ -13,129 +90,365 @@ export function Dashboard() {
 
   useEffect(() => {
     Promise.all([api.systems(), api.jobs(), api.snapshots(), api.restoreTests()])
-      .then(([s,j,sn,rt]) => { setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt) })
+      .then(([s, j, sn, rt]) => {
+        setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt)
+      })
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div style={s.loading}>Loading…</div>
 
-  const success   = jobs.filter(j => j.Status==='success').length
-  const failed    = jobs.filter(j => j.Status==='failed').length
-  const running   = jobs.filter(j => j.Status==='running'||j.Status==='pending').length
-  const totalBytes = jobs.reduce((a,j) => a+(j.BytesUploaded??0), 0)
-  // Restore Tested: % of snapshots with at least one successful restore test
-  const testedCount  = snapshots.filter(sn =>
-    restoreTests.some(rt => rt.SnapshotID===sn.ID && rt.Status==='success')
+  // ── Derived metrics ───────────────────────────────────────────────────────
+
+  const successJobs = jobs.filter(j => j.Status === 'success').length
+  const failedJobs  = jobs.filter(j => j.Status === 'failed').length
+
+  const now = Date.now()
+  const ms24h = 24 * 60 * 60 * 1000
+  const failedLast24h = jobs.filter(j =>
+    j.Status === 'failed' && (now - new Date(j.CreatedAt).getTime()) < ms24h
   ).length
-  const restoreTested = snapshots.length > 0 ? Math.round((testedCount/snapshots.length)*100) : 0
 
-  const recentFailed = jobs
-    .filter(j => j.Status==='failed')
-    .sort((a,b) => new Date(b.CreatedAt).getTime()-new Date(a.CreatedAt).getTime())
-    .slice(0,5)
+  const successRate = jobs.length > 0
+    ? Math.round((successJobs / jobs.length) * 100)
+    : 0
 
+  // Snapshot restore coverage
+  const verifiedSnaps = snapshots.filter(sn =>
+    restoreTests.some(rt => rt.SnapshotID === sn.ID && rt.Status === 'success')
+  )
+  const failedOnlySnaps = snapshots.filter(sn =>
+    !restoreTests.some(rt => rt.SnapshotID === sn.ID && rt.Status === 'success') &&
+     restoreTests.some(rt => rt.SnapshotID === sn.ID && rt.Status === 'failed')
+  )
+  const untestedSnaps = snapshots.filter(sn =>
+    !restoreTests.some(rt => rt.SnapshotID === sn.ID)
+  )
+  const restoreVerifiedPct = snapshots.length > 0
+    ? Math.round((verifiedSnaps.length / snapshots.length) * 100)
+    : 0
+
+  // Recovery Score
+  const scoreResult = calcRecoveryScore({
+    totalJobs:        jobs.length,
+    failedJobs,
+    failedLast24h,
+    totalSnapshots:   snapshots.length,
+    verifiedSnapshots: verifiedSnaps.length,
+    failedSnapshots:  failedOnlySnaps.length,
+  })
+
+  // Recent jobs
   const recentJobs = [...jobs]
-    .sort((a,b) => new Date(b.CreatedAt).getTime()-new Date(a.CreatedAt).getTime())
-    .slice(0,8)
+    .sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime())
+    .slice(0, 8)
 
-  const recentSnapshots = [...snapshots]
-    .sort((a,b) => new Date(b.CreatedAt).getTime()-new Date(a.CreatedAt).getTime())
-    .slice(0,5)
+  // Donut segments
+  const restoreDonut = [
+    { value: verifiedSnaps.length,  color: 'var(--success)',  label: 'Verified' },
+    { value: untestedSnaps.length,  color: 'var(--text-dim)', label: 'Not Tested' },
+    { value: failedOnlySnaps.length,color: 'var(--error)',    label: 'Failed' },
+  ]
+  const donutTotal = snapshots.length
 
   return (
     <div style={s.page}>
-      {/* Header */}
+
+      {/* ── Page header ───────────────────────────────────────────────────── */}
       <div style={s.header}>
         <div>
-          <h1 style={s.h1}>Backup Health</h1>
-          <p style={s.sub}>Are your systems protected — and has a restore been successfully tested?</p>
+          <h1 style={s.h1}>Dashboard</h1>
+          <p style={s.sub}>Real-time overview of your backup posture and restore assurance.</p>
         </div>
       </div>
 
-      {/* Health Cards */}
-      <div style={s.grid6}>
-        <HealthCard label="Protected Systems"   value={systems.length}  color="var(--text)" />
-        <HealthCard label="Successful Backups"  value={success}         color="var(--success)" sub={`of ${jobs.length} total`} />
-        <HealthCard label="Failed Jobs"         value={failed}          color={failed>0?'var(--error)':'var(--text-muted)'} warn={failed>0} />
-        <HealthCard label="Active"              value={running}         color={running>0?'var(--running)':'var(--text-muted)'} sub="running or pending" />
-        <HealthCard label="Restore Tested"      value={`${restoreTested}%`} color={restoreTested>0?'var(--success)':'var(--warning)'} sub="snapshots verified" warn={restoreTested===0} />
-        <HealthCard label="Storage Used"        value={fmt(totalBytes)} color="var(--text-muted)" />
+      {/* ── KPI row ───────────────────────────────────────────────────────── */}
+      <div style={s.kpiRow}>
+
+        <KpiCard
+          icon="🖥"
+          label="Protected Systems"
+          value={`${systems.length}`}
+          sub={systems.length === 0 ? 'No agents enrolled' : `${systems.length} system${systems.length !== 1 ? 's' : ''} enrolled`}
+          color="var(--accent)"
+        />
+
+        <KpiCard
+          icon="✓"
+          label="Backup Success Rate"
+          value={jobs.length > 0 ? `${successRate}%` : '—'}
+          sub={jobs.length > 0 ? `${successJobs} of ${jobs.length} jobs` : 'No jobs yet'}
+          color={successRate >= 90 ? 'var(--success)' : successRate >= 70 ? 'var(--warning)' : 'var(--error)'}
+        />
+
+        <KpiCard
+          icon="🔄"
+          label="Restore Verified"
+          value={snapshots.length > 0 ? `${restoreVerifiedPct}%` : '—'}
+          sub={snapshots.length > 0
+            ? `${verifiedSnaps.length} of ${snapshots.length} snapshots`
+            : 'No snapshots yet'}
+          color={restoreVerifiedPct === 100 ? 'var(--success)'
+            : restoreVerifiedPct > 0 ? 'var(--warning)'
+            : snapshots.length > 0 ? 'var(--error)' : 'var(--text-dim)'}
+          warn={snapshots.length > 0 && restoreVerifiedPct === 0}
+        />
+
+        <KpiCard
+          icon="⚠"
+          label="Failed Jobs"
+          value={`${failedJobs}`}
+          sub={failedLast24h > 0 ? `${failedLast24h} in last 24h` : 'None in last 24h'}
+          color={failedJobs > 0 ? 'var(--error)' : 'var(--text-dim)'}
+          warn={failedJobs > 0}
+        />
+
+        {/* Recovery Score */}
+        <div style={{ ...s.kpiCard, gridColumn: 'span 2', flexDirection: 'row', gap: 20, alignItems: 'center' }}>
+          <div style={{ ...s.scoreRing, borderColor: scoreResult.color }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: scoreResult.color }}>
+              {scoreResult.score}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: '0.05em' }}>/ 100</span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
+              Recovery Score
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: scoreResult.color, marginBottom: 4 }}>
+              {scoreResult.label}
+            </div>
+            {scoreResult.deductions.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--success)' }}>All checks passed</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {scoreResult.deductions.map((d, i) => (
+                  <div key={i} style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                    <span style={{ color: 'var(--warning)' }}>−{d.points}</span> {d.reason}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4, fontStyle: 'italic' }}>
+              Based on backup success, restore coverage and recent failures
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      {/* Restore notice if 0% */}
-      {restoreTested === 0 && (
-        <div style={s.notice}>
-          <span style={{color:'var(--warning)', fontWeight:600}}>Restore not tested</span>
-          {' — '}No snapshots have been verified through a restore test. Configure restore tests in B13.
-        </div>
-      )}
+      {/* ── Main content ──────────────────────────────────────────────────── */}
+      <div style={s.mainGrid}>
 
-      <div style={s.two}>
-        {/* Recent Failures */}
-        <div>
-          <SectionHeader title="Recent Failures" count={recentFailed.length} />
-          <Card>
-            <Table
-              cols={[
-                { header:'System',  render:j=><span style={s.mono}>{j.SystemID.slice(0,8)}…</span> },
-                { header:'Status',  render:j=><StatusBadge status={j.Status} />, width:'100px' },
-                { header:'Error',   render:j=><span style={{color:'var(--error)',fontSize:12}}>{j.ErrorSummary||'—'}</span> },
-                { header:'When',    render:j=>timeAgo(j.CreatedAt) },
-              ]}
-              rows={recentFailed} keyFn={j=>j.ID}
-              empty="No failures — all recent jobs succeeded"
-            />
-          </Card>
+        {/* Recent Jobs */}
+        <div style={s.wideCard}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Recent Jobs</span>
+            <button onClick={() => navigate('/jobs')} style={s.viewAll}>View all →</button>
+          </div>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {['Job ID', 'System', 'Type', 'Status', 'Duration', 'Completed'].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recentJobs.length === 0 ? (
+                <tr><td colSpan={6} style={s.empty}>No jobs yet</td></tr>
+              ) : recentJobs.map(j => (
+                <tr key={j.ID} style={s.tr}>
+                  <td style={s.td}><span style={s.mono}>{j.ID.slice(0, 8)}…</span></td>
+                  <td style={s.td}><span style={s.mono}>{j.SystemID.slice(0, 8)}…</span></td>
+                  <td style={s.td}><span style={s.tag}>Backup</span></td>
+                  <td style={s.td}><StatusBadge status={j.Status} /></td>
+                  <td style={s.td}>{duration(j.StartedAt, j.FinishedAt)}</td>
+                  <td style={s.td} >{timeAgo(j.FinishedAt || j.CreatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* Recent Snapshots */}
-        <div>
-          <SectionHeader title="Recent Snapshots" count={snapshots.length} />
-          <Card>
-            <Table
-              cols={[
-                { header:'Snapshot',   render:sn=><span style={s.mono}>{sn.EngineSnapshotID.slice(0,10)}…</span> },
-                { header:'Restore',    render:_=><StatusBadge status="not tested" />, width:'110px' },
-                { header:'Size',       render:s=>{ const j=jobs.find(j=>j.ID===s.JobID); return fmt(j?.BytesUploaded) }},
-                { header:'Created',    render:s=>timeAgo(s.CreatedAt) },
-              ]}
-              rows={recentSnapshots} keyFn={s=>s.ID}
-              empty="No snapshots yet"
-            />
-          </Card>
-        </div>
-      </div>
+        {/* Restore Verification donut */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Restore Verification</span>
+            <button onClick={() => navigate('/restore-tests')} style={s.viewAll}>View all →</button>
+          </div>
 
-      {/* All recent jobs */}
-      <div style={{marginTop:28}}>
-        <SectionHeader title="Recent Jobs" count={jobs.length} />
-        <Card>
-          <Table
-            cols={[
-              { header:'Status',   render:j=><StatusBadge status={j.Status} />, width:'100px' },
-              { header:'System',   render:j=><span style={s.mono}>{j.SystemID.slice(0,8)}…</span> },
-              { header:'Policy',   render:j=><span style={s.mono}>{j.PolicyID.slice(0,8)}…</span> },
-              { header:'Size',     render:j=>fmt(j.BytesUploaded) },
-              { header:'Duration', render:j=>duration(j.StartedAt,j.FinishedAt) },
-              { header:'When',     render:j=>timeAgo(j.CreatedAt) },
-            ]}
-            rows={recentJobs} keyFn={j=>j.ID}
-            empty="No jobs yet"
-          />
-        </Card>
+          {snapshots.length === 0 ? (
+            <div style={s.emptyState}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🔄</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
+                No snapshots yet.<br />Run a backup first, then configure restore tests.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 20, alignItems: 'center', padding: '8px 0 16px' }}>
+                <DonutChart
+                  segments={restoreDonut}
+                  size={110}
+                  thickness={16}
+                  center={
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>
+                        {snapshots.length}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>Snapshots</div>
+                    </div>
+                  }
+                />
+                <DonutLegend segments={restoreDonut} total={donutTotal} />
+              </div>
+
+              {restoreVerifiedPct < 100 && (
+                <div style={s.verifyNotice}>
+                  <span style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                    {untestedSnaps.length > 0
+                      ? `${untestedSnaps.length} snapshot${untestedSnaps.length > 1 ? 's' : ''} not yet tested`
+                      : `${failedOnlySnaps.length} restore test${failedOnlySnaps.length > 1 ? 's' : ''} failed`
+                    }
+                  </span>
+                  {' — '}
+                  <button onClick={() => navigate('/restore-tests')} style={s.inlineLink}>
+                    schedule restore tests →
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Storage summary */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Storage Used</span>
+          </div>
+          <div style={{ padding: '8px 0' }}>
+            <div style={s.storageTotal}>
+              {fmt(jobs.reduce((a, j) => a + (j.BytesUploaded ?? 0), 0))}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
+              across {snapshots.length} snapshot{snapshots.length !== 1 ? 's' : ''}
+            </div>
+            <div style={s.divider} />
+            <StatRow label="Successful jobs" value={`${successJobs}`} color="var(--success)" />
+            <StatRow label="Failed jobs"     value={`${failedJobs}`}  color={failedJobs > 0 ? 'var(--error)' : 'var(--text-dim)'} />
+            <StatRow label="Total jobs"      value={`${jobs.length}`} color="var(--text-muted)" />
+          </div>
+        </div>
+
       </div>
     </div>
   )
 }
 
-const s: Record<string,React.CSSProperties> = {
-  page:    { padding:'28px 36px', maxWidth:1200 },
-  loading: { padding:40, color:'var(--text-muted)' },
-  header:  { marginBottom:24 },
-  h1:      { fontSize:22, fontWeight:700, color:'var(--text)' },
-  sub:     { fontSize:13, color:'var(--text-muted)', marginTop:4, fontStyle:'italic' },
-  grid6:   { display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12, marginBottom:16 },
-  notice:  { background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:'var(--radius)', padding:'10px 16px', fontSize:13, color:'var(--text-muted)', marginBottom:24 },
-  two:     { display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginTop:28 },
-  mono:    { fontFamily:'var(--font-mono)', fontSize:12, color:'var(--accent)' },
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+function KpiCard({ icon, label, value, sub, color, warn }: {
+  icon: string; label: string; value: string
+  sub?: string; color: string; warn?: boolean
+}) {
+  return (
+    <div style={{ ...s.kpiCard, borderColor: warn ? 'rgba(245,158,11,0.3)' : 'var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          {label}
+        </span>
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 800, color, lineHeight: 1, marginBottom: 4 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sub}</div>}
+    </div>
+  )
+}
+
+function StatRow({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color }}>{value}</span>
+    </div>
+  )
+}
+
+// ── Styles ─────────────────────────────────────────────────────────────────
+
+const s: Record<string, React.CSSProperties> = {
+  page:        { padding: '28px 36px', maxWidth: 1300 },
+  loading:     { padding: 40, color: 'var(--text-muted)', textAlign: 'center' },
+  header:      { marginBottom: 24 },
+  h1:          { fontSize: 22, fontWeight: 700, color: 'var(--text)', marginBottom: 2 },
+  sub:         { fontSize: 13, color: 'var(--text-muted)' },
+
+  kpiRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr 1fr 2fr',
+    gap: 14,
+    marginBottom: 24,
+  },
+  kpiCard: {
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: 10, padding: '16px 20px',
+    display: 'flex', flexDirection: 'column',
+  },
+  scoreRing: {
+    width: 72, height: 72, borderRadius: '50%',
+    border: '3px solid',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  mainGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 320px 220px',
+    gap: 16,
+    alignItems: 'start',
+  },
+
+  wideCard: {
+    background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10,
+    overflow: 'hidden',
+  },
+  card: {
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: 10, padding: '16px 20px',
+  },
+  cardHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '14px 20px 10px', borderBottom: '1px solid var(--border)',
+  },
+  cardTitle:   { fontSize: 13, fontWeight: 700, color: 'var(--text)' },
+  viewAll:     {
+    fontSize: 11, color: 'var(--accent)', background: 'none',
+    border: 'none', cursor: 'pointer', padding: 0,
+  },
+
+  table:  { width: '100%', borderCollapse: 'collapse' as const },
+  th:     { padding: '8px 16px', fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textAlign: 'left' as const, textTransform: 'uppercase' as const, letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' },
+  tr:     { borderBottom: '1px solid rgba(255,255,255,0.04)' },
+  td:     { padding: '9px 16px', fontSize: 13, color: 'var(--text-muted)', verticalAlign: 'middle' as const },
+  empty:  { padding: '24px 16px', textAlign: 'center' as const, color: 'var(--text-dim)', fontSize: 13 },
+  mono:   { fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' },
+  tag:    { fontSize: 11, padding: '2px 7px', borderRadius: 4, background: 'rgba(59,130,246,0.1)', color: 'var(--accent)', fontWeight: 600 },
+
+  emptyState: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    justifyContent: 'center', padding: '24px 0', minHeight: 120,
+  },
+  verifyNotice: {
+    background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)',
+    borderRadius: 6, padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)',
+    marginTop: 4,
+  },
+  inlineLink:  { background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', padding: 0 },
+
+  storageTotal: { fontSize: 26, fontWeight: 800, color: 'var(--text)', marginBottom: 2 },
+  divider:      { height: 1, background: 'var(--border)', margin: '12px 0' },
 }
