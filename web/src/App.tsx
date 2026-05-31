@@ -8,6 +8,7 @@ import { Jobs }         from './pages/Jobs'
 import { Snapshots }    from './pages/Snapshots'
 import { RestoreTests } from './pages/RestoreTests'
 import { Repositories } from './pages/Repositories'
+import { Evidence }     from './pages/Evidence'
 import { Settings }     from './pages/Settings'
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/snapshots"     element={<Snapshots />} />
             <Route path="/restore-tests" element={<RestoreTests />} />
             <Route path="/repositories"  element={<Repositories />} />
+            <Route path="/evidence"      element={<Evidence />} />
             <Route path="/settings"      element={<Settings />} />
           </Routes>
         </main>

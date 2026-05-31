@@ -1,11 +1,14 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
 
 func (h *Handler) listPolicies(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +43,13 @@ func (h *Handler) createPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionPolicyCreated, audit.ResourcePolicy, p.ID.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		UA(r.UserAgent()).
+		Details(fmt.Sprintf("name=%s engine=%s", p.Name, p.Engine)).
+		Build())
 	h.notifyPoliciesChanged(r.Context())
 	writeJSON(w, http.StatusCreated, p)
 }
@@ -74,6 +84,13 @@ func (h *Handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionPolicyUpdated, audit.ResourcePolicy, id.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		UA(r.UserAgent()).
+		Details(fmt.Sprintf("name=%s engine=%s", p.Name, p.Engine)).
+		Build())
 	h.notifyPoliciesChanged(r.Context())
 	writeJSON(w, http.StatusOK, p)
 }
@@ -88,6 +105,12 @@ func (h *Handler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionPolicyDeleted, audit.ResourcePolicy, id.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		Severity(audit.SeverityWarning).
+		Build())
 	h.notifyPoliciesChanged(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }
