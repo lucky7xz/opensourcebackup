@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth } from '../api'
+import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth, type HealthScore } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
 import { DonutChart, DonutLegend } from '../components/DonutChart'
 
@@ -88,15 +88,18 @@ export function Dashboard() {
   const [restoreTests, setRestoreTests] = useState<RestoreTest[]>([])
   const [repos,        setRepos]        = useState<BackupRepository[]>([])
   const [repoHealth,   setRepoHealth]   = useState<RepositoryHealth[]>([])
+  const [healthScore,  setHealthScore]  = useState<HealthScore|null>(null)
   const [loading,      setLoading]      = useState(true)
 
   useEffect(() => {
     Promise.all([
       api.systems(), api.jobs(), api.snapshots(), api.restoreTests(),
-      api.repositories(), api.repositoryHealth().catch(() => [] as RepositoryHealth[]),
-    ]).then(([s, j, sn, rt, r, rh]) => {
+      api.repositories(),
+      api.repositoryHealth().catch(() => [] as RepositoryHealth[]),
+      api.healthScore().catch(() => null),
+    ]).then(([s, j, sn, rt, r, rh, hs]) => {
       setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt)
-      setRepos(r); setRepoHealth(rh)
+      setRepos(r); setRepoHealth(rh); setHealthScore(hs)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -238,36 +241,50 @@ export function Dashboard() {
           warn={failedJobs > 0}
         />
 
-        {/* Recovery Score */}
+        {/* Recovery Score — from backend canonical calculation */}
         <div style={{ ...s.kpiCard, gridColumn: 'span 2', flexDirection: 'row', gap: 20, alignItems: 'center' }}>
-          <div style={{ ...s.scoreRing, borderColor: scoreResult.color }}>
-            <span style={{ fontSize: 22, fontWeight: 800, color: scoreResult.color }}>
-              {scoreResult.score}
-            </span>
-            <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: '0.05em' }}>/ 100</span>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
-              Recovery Score
-            </div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: scoreResult.color, marginBottom: 4 }}>
-              {scoreResult.label}
-            </div>
-            {scoreResult.deductions.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--success)' }}>All checks passed</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {scoreResult.deductions.map((d, i) => (
-                  <div key={i} style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                    <span style={{ color: 'var(--warning)' }}>−{d.points}</span> {d.reason}
-                  </div>
-                ))}
+          {healthScore ? (
+            <>
+              <div style={{ ...s.scoreRing, borderColor: healthScore.color }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: healthScore.color }}>
+                  {healthScore.score}
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--text-dim)', letterSpacing: '0.05em' }}>/ 100</span>
               </div>
-            )}
-            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4, fontStyle: 'italic' }}>
-              Based on backup success, restore coverage and recent failures
-            </div>
-          </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>
+                  Backup Health Score
+                </div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: healthScore.color, marginBottom: 6 }}>
+                  {healthScore.label}
+                </div>
+                {healthScore.deductions.length === 0 ? (
+                  <div style={{ fontSize: 11, color: 'var(--success)' }}>✓ All checks passed</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {healthScore.deductions.map((d, i) => (
+                      <div key={i} style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 5 }}>
+                        <span style={{ color: 'var(--error)', fontWeight: 700, flexShrink: 0 }}>−{d.points}</span>
+                        <span>{d.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {healthScore.factors.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+                    {healthScore.factors.slice(0, 2).map((f, i) => (
+                      <div key={i} style={{ fontSize: 10, color: 'var(--success)' }}>✓ {f}</div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: 9, color: 'var(--text-dim)', marginTop: 6, fontStyle: 'italic' }}>
+                  Score v{healthScore.version} · Prometheus: opensourcebackup_recovery_score
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ color: 'var(--text-dim)', fontSize: 13 }}>Loading score…</div>
+          )}
         </div>
 
       </div>

@@ -150,6 +150,8 @@ func main() {
 		Jobs:         catalog.NewJobStore(db),
 		Snapshots:    catalog.NewSnapshotStore(db),
 		RestoreTests: catalog.NewRestoreTestStore(db),
+		Repositories: catalog.NewRepositoryStore(db),
+		Policies:     catalog.NewPolicyStore(db),
 	}, logger)
 	mux.Handle("/metrics", metricsHandler)
 

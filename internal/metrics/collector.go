@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	apphealth "github.com/cerberus8484/opensourcebackup/internal/health"
 )
 
 // Thresholds for agent online/idle/offline classification.
@@ -31,6 +32,8 @@ type Stores struct {
 	Jobs         catalog.JobStore
 	Snapshots    catalog.SnapshotStore
 	RestoreTests catalog.RestoreTestStore
+	Repositories catalog.RepositoryStore
+	Policies     catalog.PolicyStore
 }
 
 // Collector implements prometheus.Collector.
@@ -240,16 +243,75 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	}
 	ch <- prometheus.MustNewConstMetric(c.restoreVerifiedRatio, prometheus.GaugeValue, verifiedRatio)
 
-	// ── Recovery Score ────────────────────────────────────────────────────────
-	// IDENTICAL formula to the web dashboard (Dashboard.tsx calcRecoveryScore).
-	// Any change here must be reflected in the TypeScript as well.
+	// ── Recovery Score — uses canonical health package ────────────────────────
+	// Single source of truth: health.Calculate is also used by GET /v1/health/score.
 	failedLast24h := job24hCounts["failed"]
-	failureRate   := 0.0
-	if len(jobs) > 0 {
-		failureRate = float64(jobCounts["failed"]) / float64(len(jobs)) * 100
+	var lastSuccessAt *time.Time
+	for _, j := range jobs {
+		if j.Status == "success" && j.Type == catalog.JobTypeBackup {
+			if j.FinishedAt != nil && (lastSuccessAt == nil || j.FinishedAt.After(*lastSuccessAt)) {
+				lastSuccessAt = j.FinishedAt
+			}
+		}
 	}
-	score := calcRecoveryScore(len(snapshots), verifiedCount, failedLast24h, failureRate)
-	ch <- prometheus.MustNewConstMetric(c.recoveryScore, prometheus.GaugeValue, float64(score))
+	// Load restore tests for freshness check
+	var lastRestoreTestAt *time.Time
+	allRTs, rtErr := c.stores.RestoreTests.List(ctx)
+	if rtErr != nil {
+		allRTs = nil
+	}
+	for _, rt := range allRTs {
+		if rt.Status == "success" && rt.FinishedAt != nil {
+			if lastRestoreTestAt == nil || rt.FinishedAt.After(*lastRestoreTestAt) {
+				lastRestoreTestAt = rt.FinishedAt
+			}
+		}
+	}
+	// Re-count verified with dedup
+	verifiedDedup := 0
+	snapIDMap := make(map[string]bool, len(snapshots))
+	for _, sn := range snapshots { snapIDMap[sn.ID.String()] = true }
+	seen := make(map[string]bool)
+	for _, rt := range allRTs {
+		if rt.Status == "success" && snapIDMap[rt.SnapshotID.String()] && !seen[rt.SnapshotID.String()] {
+			verifiedDedup++
+			seen[rt.SnapshotID.String()] = true
+		}
+	}
+	// Load repos for security checks
+	repos, _ := c.stores.Repositories.List(ctx)
+	unprotected, unencrypted := 0, 0
+	for _, repo := range repos {
+		if !repo.ImmutableMode.IsProtected() { unprotected++ }
+		if repo.EncryptionMode == nil || *repo.EncryptionMode == "" { unencrypted++ }
+	}
+	// Load policies for retention check
+	policies, _ := c.stores.Policies.List(ctx)
+	policiesWithRetention := 0
+	for _, p := range policies {
+		if p.RetentionPlan.HasRules() { policiesWithRetention++ }
+	}
+	healthInput := apphealth.Input{
+		TotalSystems:          len(systems),
+		OnlineAgents:          online,
+		IdleAgents:            idle,
+		OfflineAgents:         offline,
+		TotalJobs:             jobCounts["success"] + jobCounts["failed"],
+		SuccessJobs:           jobCounts["success"],
+		FailedJobs:            jobCounts["failed"],
+		FailedLast24h:         failedLast24h,
+		LastSuccessAt:         lastSuccessAt,
+		TotalSnapshots:        len(snapshots),
+		VerifiedSnapshots:     verifiedDedup,
+		LastRestoreTestAt:     lastRestoreTestAt,
+		TotalRepos:            len(repos),
+		UnprotectedRepos:      unprotected,
+		UnencryptedRepos:      unencrypted,
+		PoliciesWithRetention: policiesWithRetention,
+		Now:                   now,
+	}
+	scoreResult := apphealth.Calculate(healthInput)
+	ch <- prometheus.MustNewConstMetric(c.recoveryScore, prometheus.GaugeValue, float64(scoreResult.Score))
 
 	// ── Scrape errors ─────────────────────────────────────────────────────────
 	ch <- prometheus.MustNewConstMetric(c.scrapeErrors, prometheus.GaugeValue, float64(errors))

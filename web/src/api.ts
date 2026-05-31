@@ -32,6 +32,16 @@ export interface System {
 }
 export type ImmutableMode = 'none' | 'object_lock' | 'worm' | 'append_only' | 'unknown'
 
+export interface ScoreDeduction { points: number; code: string; reason: string }
+export interface HealthScore {
+  score:      number
+  label:      string
+  color:      string
+  version:    string
+  deductions: ScoreDeduction[]
+  factors:    string[]
+}
+
 export interface BackupRepository {
   ID: string; Type: string; Location: string
   EncryptionMode?: string; ObjectLockEnabled: boolean
@@ -81,6 +91,7 @@ export const api = {
   deleteJob:     (id: string) => del(`/v1/jobs/${id}`),
   repositories:        () => get<BackupRepository[]>('/v1/repositories'),
   repositoryHealth:    () => get<RepositoryHealth[]>('/v1/repositories/health'),
+  healthScore:         () => get<HealthScore>('/v1/health/score'),
   createRepository:    (r: Partial<BackupRepository> & { ImmutableMode?: ImmutableMode }) => post<BackupRepository>('/v1/repositories', r),
   deleteRepository:    (id: string) => del(`/v1/repositories/${id}`),
   policies:      () => get<BackupPolicy[]>('/v1/policies'),
