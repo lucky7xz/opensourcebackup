@@ -157,15 +157,30 @@ SERVER_BIN="$OSB_INSTALL_DIR/opensourcebackup-server"
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 DOWNLOAD_URL="https://github.com/cerberus8484/opensourcebackup/releases/download/${OSB_VERSION}/opensourcebackup-server-linux-${ARCH}"
 
+# Ensure Go 1.22+ is available (Debian apt only ships 1.19 which is too old)
+ensure_go_122() {
+  local GO_MIN="1.22"
+  local GO_BINARY="go"
+  # Check if a sufficient version is already installed
+  if command -v go &>/dev/null; then
+    local VER
+    VER=$(go version | grep -oP '\d+\.\d+' | head -1)
+    if awk -v v="$VER" -v m="$GO_MIN" 'BEGIN{if(v+0>=m+0)exit 0; exit 1}'; then
+      ok "Go $VER already installed"; return 0
+    fi
+  fi
+  info "Installing Go 1.22.5 (Debian ships 1.19 which is too old)..."
+  curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" | tar -C /usr/local -xz
+  export PATH="/usr/local/go/bin:$PATH"
+  ok "Go $(go version | grep -oP '\d+\.\d+\.\d+' | head -1) installed"
+}
+
 # Fallback: build from source if release not available
 if ! curl -fsSL --head "$DOWNLOAD_URL" &>/dev/null; then
-  warn "Binary release not found. Building from source (requires Go 1.22+)..."
-  apt-get install -y -qq golang-go 2>/dev/null || {
-    warn "Go not available via apt. Installing Go 1.22 manually..."
-    curl -fsSL "https://go.dev/dl/go1.22.5.linux-amd64.tar.gz" | tar -C /usr/local -xz
-    export PATH="$PATH:/usr/local/go/bin"
-  }
+  warn "Binary release not found. Building from source..."
+  ensure_go_122
   cd /tmp
+  rm -rf osb-build
   git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git osb-build
   cd osb-build
   go build -o "$SERVER_BIN" ./cmd/control-plane
