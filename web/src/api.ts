@@ -30,9 +30,23 @@ export interface System {
   ID: string; Hostname: string; OS?: string; AgentVersion?: string
   LastSeen?: string; RiskClass: string; Tags?: Record<string,string>; CreatedAt: string
 }
+export type ImmutableMode = 'none' | 'object_lock' | 'worm' | 'append_only' | 'unknown'
+
 export interface BackupRepository {
   ID: string; Type: string; Location: string
-  EncryptionMode?: string; ObjectLockEnabled: boolean; CreatedAt: string
+  EncryptionMode?: string; ObjectLockEnabled: boolean
+  ImmutableMode: ImmutableMode; CreatedAt: string
+}
+
+export interface RepositoryHealth {
+  RepositoryID:       string
+  EncryptionEnabled:  boolean
+  ImmutableMode:      ImmutableMode
+  SnapshotCount:      number
+  VerifiedCount:      number
+  LastBackupAt?:      string
+  LastRestoreTestAt?: string
+  LastRetentionAt?:   string
 }
 export interface BackupPolicy {
   ID: string; Name: string; Engine: string; Schedule?: string
@@ -65,9 +79,10 @@ export const api = {
   systems:       () => get<System[]>('/v1/systems'),
   deleteSystem:  (id: string) => del(`/v1/systems/${id}`),
   deleteJob:     (id: string) => del(`/v1/jobs/${id}`),
-  repositories:       () => get<BackupRepository[]>('/v1/repositories'),
-  createRepository:   (r: Partial<BackupRepository>) => post<BackupRepository>('/v1/repositories', r),
-  deleteRepository:   (id: string) => del(`/v1/repositories/${id}`),
+  repositories:        () => get<BackupRepository[]>('/v1/repositories'),
+  repositoryHealth:    () => get<RepositoryHealth[]>('/v1/repositories/health'),
+  createRepository:    (r: Partial<BackupRepository> & { ImmutableMode?: ImmutableMode }) => post<BackupRepository>('/v1/repositories', r),
+  deleteRepository:    (id: string) => del(`/v1/repositories/${id}`),
   policies:      () => get<BackupPolicy[]>('/v1/policies'),
   createPolicy:  (p: Partial<BackupPolicy>) => post<BackupPolicy>('/v1/policies', p),
   updatePolicy:  (id: string, p: Partial<BackupPolicy>) => put<BackupPolicy>(`/v1/policies/${id}`, p),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System } from '../api'
+import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
 import { DonutChart, DonutLegend } from '../components/DonutChart'
 
@@ -86,14 +86,18 @@ export function Dashboard() {
   const [jobs,         setJobs]         = useState<BackupJob[]>([])
   const [snapshots,    setSnapshots]    = useState<Snapshot[]>([])
   const [restoreTests, setRestoreTests] = useState<RestoreTest[]>([])
+  const [repos,        setRepos]        = useState<BackupRepository[]>([])
+  const [repoHealth,   setRepoHealth]   = useState<RepositoryHealth[]>([])
   const [loading,      setLoading]      = useState(true)
 
   useEffect(() => {
-    Promise.all([api.systems(), api.jobs(), api.snapshots(), api.restoreTests()])
-      .then(([s, j, sn, rt]) => {
-        setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt)
-      })
-      .finally(() => setLoading(false))
+    Promise.all([
+      api.systems(), api.jobs(), api.snapshots(), api.restoreTests(),
+      api.repositories(), api.repositoryHealth().catch(() => [] as RepositoryHealth[]),
+    ]).then(([s, j, sn, rt, r, rh]) => {
+      setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt)
+      setRepos(r); setRepoHealth(rh)
+    }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div style={s.loading}>Loading…</div>
@@ -373,6 +377,63 @@ export function Dashboard() {
         </div>
 
       </div>
+
+      {/* ── Repository Health ─────────────────────────────────────────────── */}
+      {repos.length > 0 && (
+        <div style={{ ...s.card, marginTop: 16 }}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Repository Health</span>
+            <button onClick={() => navigate('/repositories')} style={s.viewAll}>Manage →</button>
+          </div>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                {['Repository', 'Type', 'Immutability', 'Encryption', 'Snapshots', 'Verified', 'Last Backup', 'Last Restore Test'].map(h => (
+                  <th key={h} style={s.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {repos.map(repo => {
+                const health = repoHealth.find(h => h.RepositoryID === repo.ID)
+                const imm = repo.ImmutableMode ?? 'none'
+                const immColor = (imm === 'object_lock' || imm === 'worm') ? 'var(--success)'
+                  : imm === 'append_only' ? '#22c55e'
+                  : imm === 'unknown' ? 'var(--warning)'
+                  : 'var(--text-dim)'
+                const immLabel = {
+                  object_lock: '🔒 Object Lock', worm: '🔒 WORM',
+                  append_only: '📎 Append-Only', unknown: '? Unknown', none: '— None',
+                }[imm] ?? '— None'
+
+                return (
+                  <tr key={repo.ID} style={s.tr}>
+                    <td style={s.td}><span style={s.mono}>{repo.Location.length > 28 ? repo.Location.slice(-28) : repo.Location}</span></td>
+                    <td style={s.td}><span style={s.tag}>{repo.Type}</span></td>
+                    <td style={s.td}><span style={{ fontSize: 12, color: immColor, fontWeight: 600 }}>{immLabel}</span></td>
+                    <td style={s.td}>
+                      {health?.EncryptionEnabled
+                        ? <span style={{ color: 'var(--success)', fontSize: 12 }}>✓ AES-256</span>
+                        : <span style={{ color: 'var(--warning)', fontSize: 12 }}>⚠ Off</span>}
+                    </td>
+                    <td style={s.td}>{health?.SnapshotCount ?? '—'}</td>
+                    <td style={s.td}>
+                      {health && health.SnapshotCount > 0
+                        ? <span style={{ color: health.VerifiedCount === health.SnapshotCount ? 'var(--success)' : 'var(--warning)', fontSize: 12, fontWeight: 600 }}>
+                            {health.VerifiedCount}/{health.SnapshotCount}
+                          </span>
+                        : <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>—</span>
+                      }
+                    </td>
+                    <td style={s.td}>{timeAgo(health?.LastBackupAt)}</td>
+                    <td style={s.td}>{timeAgo(health?.LastRestoreTestAt)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ── Agent Activity ─────────────────────────────────────────────────── */}
       <div style={s.agentRow}>

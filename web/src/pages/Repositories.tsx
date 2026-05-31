@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type BackupRepository } from '../api'
+import { api, type BackupRepository, type ImmutableMode } from '../api'
 import { Card, SectionHeader } from '../components/Card'
 import { Table } from '../components/Table'
 import { Modal } from '../components/Modal'
@@ -44,27 +44,32 @@ export function Repositories() {
   const [err,        setErr]        = useState<string|null>(null)
 
   // form
-  const [type,       setType]       = useState('restic')
-  const [location,   setLocation]   = useState('')
-  const [encryption, setEncryption] = useState('aes256')
-  const [worm,       setWorm]       = useState(false)
+  const [type,          setType]          = useState('restic')
+  const [location,      setLocation]      = useState('')
+  const [encryption,    setEncryption]    = useState('aes256')
+  const [worm,          setWorm]          = useState(false)
+  const [immutableMode, setImmutableMode] = useState<ImmutableMode>('none')
 
   const load = () => api.repositories().then(setRepos).finally(() => setLoading(false))
   useEffect(() => { load() }, [])
 
   function resetForm() {
-    setType('restic'); setLocation(''); setEncryption('aes256'); setWorm(false); setErr(null)
+    setType('restic'); setLocation(''); setEncryption('aes256'); setWorm(false)
+    setImmutableMode('none'); setErr(null)
   }
 
   async function save() {
     if (!location.trim()) { setErr('Location is required.'); return }
     setSaving(true); setErr(null)
     try {
+      // Sync ObjectLockEnabled with immutable_mode for backward compatibility
+      const objLock = worm || immutableMode === 'object_lock'
       await api.createRepository({
         Type:              type,
         Location:          location.trim(),
         EncryptionMode:    encryption.trim() || undefined,
-        ObjectLockEnabled: worm,
+        ObjectLockEnabled: objLock,
+        ImmutableMode:     immutableMode,
       })
       setShowForm(false); resetForm(); await load()
     } catch { setErr('Could not create repository. Check the location format.') }
@@ -94,9 +99,7 @@ export function Repositories() {
               { header:'Encryption', render:r => r.EncryptionMode
                   ? <span style={s.enc}>{r.EncryptionMode}</span>
                   : <span style={s.dim}>—</span>, width:'100px' },
-              { header:'WORM Lock',  render:r => r.ObjectLockEnabled
-                  ? <span style={s.worm}>✓ enabled</span>
-                  : <span style={s.dim}>—</span>, width:'100px' },
+              { header:'Immutability', render:r => <ImmutableBadge mode={r.ImmutableMode} />, width:'120px' },
               { header:'ID',         render:r => <span style={s.mono}>{r.ID.slice(0,8)}…</span> },
               { header:'Created',    render:r => new Date(r.CreatedAt).toLocaleDateString() },
               { header:'',           render:r => (
@@ -149,16 +152,29 @@ export function Repositories() {
                 <div style={s.hint2}>Leave blank to disable encryption (not recommended)</div>
               </div>
               <div style={s.field}>
-                <label style={s.label}>WORM / Object Lock</label>
-                <div style={s.toggle} onClick={() => setWorm(v => !v)}>
-                  <div style={{...s.toggleDot, ...(worm ? s.toggleOn : {})}}>
-                    {worm ? '✓' : ''}
-                  </div>
-                  <span style={{ fontSize:13, color: worm ? 'var(--success)' : 'var(--text-dim)' }}>
-                    {worm ? 'Enabled — ransomware protection' : 'Disabled'}
-                  </span>
+                <label style={s.label}>Write Protection (Immutability)</label>
+                <select
+                  style={{...s.input, cursor:'pointer'}}
+                  value={immutableMode}
+                  onChange={e => {
+                    const m = e.target.value as ImmutableMode
+                    setImmutableMode(m)
+                    setWorm(m === 'object_lock' || m === 'worm')
+                  }}
+                >
+                  <option value="none">None — no write protection</option>
+                  <option value="object_lock">Object Lock — S3 / MinIO WORM</option>
+                  <option value="worm">WORM — hardware / NAS write-once</option>
+                  <option value="append_only">Append-Only — restic --append-only</option>
+                  <option value="unknown">Unknown — not verified</option>
+                </select>
+                <div style={s.hint2}>
+                  {immutableMode === 'none'        && 'No write protection. Snapshots can be deleted by anyone with repo access.'}
+                  {immutableMode === 'object_lock' && 'S3 Object Lock prevents deletion for the retention period. Requires MinIO or AWS S3.'}
+                  {immutableMode === 'worm'        && 'Hardware/NAS write-once: data cannot be overwritten or deleted.'}
+                  {immutableMode === 'append_only' && 'Restic --append-only: agent cannot delete data, only the server can.'}
+                  {immutableMode === 'unknown'     && 'Protection status has not been verified. Review storage configuration.'}
                 </div>
-                <div style={s.hint2}>Requires MinIO or S3 Object Lock support</div>
               </div>
             </div>
 
@@ -183,6 +199,29 @@ export function Repositories() {
         />
       )}
     </div>
+  )
+}
+
+// ── ImmutableBadge ────────────────────────────────────────────────────────────
+
+const IMMUTABLE_CONFIG: Record<string, { label: string; color: string; icon: string; tip: string }> = {
+  object_lock:  { label: 'Object Lock', color: 'var(--success)',  icon: '🔒', tip: 'S3/MinIO WORM — deletion blocked at storage level' },
+  worm:         { label: 'WORM',        color: 'var(--success)',  icon: '🔒', tip: 'Hardware/NAS write-once media' },
+  append_only:  { label: 'Append-Only', color: '#22c55e',         icon: '📎', tip: 'Restic --append-only: agent cannot delete' },
+  unknown:      { label: 'Unknown',     color: 'var(--warning)',  icon: '?',  tip: 'Write protection status not verified' },
+  none:         { label: 'None',        color: 'var(--text-dim)', icon: '—',  tip: 'No write protection configured' },
+}
+
+function ImmutableBadge({ mode }: { mode?: string }) {
+  const cfg = IMMUTABLE_CONFIG[mode ?? 'none'] ?? IMMUTABLE_CONFIG['none']
+  return (
+    <span title={cfg.tip} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 11, fontWeight: 600, color: cfg.color,
+    }}>
+      <span>{cfg.icon}</span>
+      {cfg.label}
+    </span>
   )
 }
 

@@ -9,6 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const repoSelect = `
+	SELECT id, type, location, encryption_mode, object_lock_enabled, immutable_mode, retention_policy_id, created_at
+	FROM repositories`
+
 // RepositoryStore defines data access for the repositories table.
 type RepositoryStore interface {
 	Create(ctx context.Context, r *BackupRepository) error
@@ -28,24 +32,34 @@ func NewRepositoryStore(db *DB) RepositoryStore {
 }
 
 func (s *pgRepositoryStore) Create(ctx context.Context, r *BackupRepository) error {
+	mode := r.ImmutableMode
+	if mode == "" {
+		if r.ObjectLockEnabled {
+			mode = ImmutableObjectLock
+		} else {
+			mode = ImmutableNone
+		}
+	}
 	row := s.db.pool.QueryRow(ctx, `
-		INSERT INTO repositories (type, location, encryption_mode, object_lock_enabled, retention_policy_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO repositories
+		  (type, location, encryption_mode, object_lock_enabled, immutable_mode, retention_policy_id)
+		VALUES ($1,$2,$3,$4,$5,$6)
 		RETURNING id, created_at`,
-		r.Type, r.Location, r.EncryptionMode, r.ObjectLockEnabled, uuidPtrToRaw(r.RetentionPolicyID),
+		r.Type, r.Location, r.EncryptionMode, r.ObjectLockEnabled, string(mode),
+		uuidPtrToRaw(r.RetentionPolicyID),
 	)
 	var rawID pgtype.UUID
 	if err := row.Scan(&rawID, &r.CreatedAt); err != nil {
 		return err
 	}
 	r.ID = uuid.UUID(rawID.Bytes)
+	r.ImmutableMode = mode
 	return nil
 }
 
 func (s *pgRepositoryStore) GetByID(ctx context.Context, id uuid.UUID) (*BackupRepository, error) {
-	row := s.db.pool.QueryRow(ctx, `
-		SELECT id, type, location, encryption_mode, object_lock_enabled, retention_policy_id, created_at
-		FROM repositories WHERE id = $1`,
+	row := s.db.pool.QueryRow(ctx,
+		repoSelect+` WHERE id = $1`,
 		pgtype.UUID{Bytes: id, Valid: true},
 	)
 	r, err := scanRepository(row)
@@ -56,9 +70,7 @@ func (s *pgRepositoryStore) GetByID(ctx context.Context, id uuid.UUID) (*BackupR
 }
 
 func (s *pgRepositoryStore) List(ctx context.Context) ([]BackupRepository, error) {
-	rows, err := s.db.pool.Query(ctx, `
-		SELECT id, type, location, encryption_mode, object_lock_enabled, retention_policy_id, created_at
-		FROM repositories ORDER BY created_at DESC`)
+	rows, err := s.db.pool.Query(ctx, repoSelect+` ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,12 +88,17 @@ func (s *pgRepositoryStore) List(ctx context.Context) ([]BackupRepository, error
 }
 
 func (s *pgRepositoryStore) Update(ctx context.Context, r *BackupRepository) error {
+	mode := r.ImmutableMode
+	if mode == "" {
+		mode = ImmutableNone
+	}
 	tag, err := s.db.pool.Exec(ctx, `
 		UPDATE repositories
-		SET type=$1, location=$2, encryption_mode=$3, object_lock_enabled=$4, retention_policy_id=$5
-		WHERE id=$6`,
+		SET type=$1, location=$2, encryption_mode=$3, object_lock_enabled=$4,
+		    immutable_mode=$5, retention_policy_id=$6
+		WHERE id=$7`,
 		r.Type, r.Location, r.EncryptionMode, r.ObjectLockEnabled,
-		uuidPtrToRaw(r.RetentionPolicyID),
+		string(mode), uuidPtrToRaw(r.RetentionPolicyID),
 		pgtype.UUID{Bytes: r.ID, Valid: true},
 	)
 	if err != nil {
@@ -111,14 +128,16 @@ func scanRepository(row rowScanner) (*BackupRepository, error) {
 		r        BackupRepository
 		rawID    pgtype.UUID
 		rawRetID pgtype.UUID
+		mode     string
 	)
 	if err := row.Scan(
 		&rawID, &r.Type, &r.Location, &r.EncryptionMode,
-		&r.ObjectLockEnabled, &rawRetID, &r.CreatedAt,
+		&r.ObjectLockEnabled, &mode, &rawRetID, &r.CreatedAt,
 	); err != nil {
 		return nil, err
 	}
 	r.ID = uuid.UUID(rawID.Bytes)
+	r.ImmutableMode = ImmutableMode(mode)
 	if rawRetID.Valid {
 		id := uuid.UUID(rawRetID.Bytes)
 		r.RetentionPolicyID = &id

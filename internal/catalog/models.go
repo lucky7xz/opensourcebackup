@@ -17,14 +17,45 @@ type System struct {
 	CreatedAt    time.Time
 }
 
+// ImmutableMode documents the write-protection mechanism of a repository.
+// This is a declared property — not automatically verified against the storage backend.
+type ImmutableMode string
+
+const (
+	ImmutableNone       ImmutableMode = "none"        // no write protection
+	ImmutableObjectLock ImmutableMode = "object_lock" // S3/MinIO Object Lock
+	ImmutableWORM       ImmutableMode = "worm"        // hardware/NAS WORM
+	ImmutableAppendOnly ImmutableMode = "append_only" // restic --append-only or similar
+	ImmutableUnknown    ImmutableMode = "unknown"      // not verified
+)
+
+// IsProtected reports whether this mode provides any form of write protection.
+func (m ImmutableMode) IsProtected() bool {
+	return m != ImmutableNone && m != ImmutableUnknown && m != ""
+}
+
 type BackupRepository struct {
 	ID                uuid.UUID
 	Type              string
 	Location          string
 	EncryptionMode    *string
 	ObjectLockEnabled bool
+	ImmutableMode     ImmutableMode // preferred over ObjectLockEnabled for new code
 	RetentionPolicyID *uuid.UUID
 	CreatedAt         time.Time
+}
+
+// RepositoryHealth holds derived health indicators for a repository.
+// Computed on demand — never stored. Honest: no fake "healthy" without evidence.
+type RepositoryHealth struct {
+	RepositoryID       uuid.UUID
+	EncryptionEnabled  bool
+	ImmutableMode      ImmutableMode
+	SnapshotCount      int
+	VerifiedCount      int     // snapshots with successful restore test
+	LastBackupAt       *time.Time
+	LastRestoreTestAt  *time.Time
+	LastRetentionAt    *time.Time
 }
 
 // RetentionPlan holds the restic-compatible keep rules for a policy.
