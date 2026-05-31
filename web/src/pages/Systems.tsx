@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, timeAgo, type BackupJob, type BackupPolicy, type System } from '../api'
+import { api, post, timeAgo, type BackupJob, type BackupPolicy, type System } from '../api'
 import { Card, SectionHeader } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
@@ -17,8 +17,15 @@ export function Systems() {
   const [jobs,     setJobs]     = useState<BackupJob[]>([])
   const [policies, setPolicies] = useState<BackupPolicy[]>([])
   const [loading,  setLoading]  = useState(true)
-  const [runFor,     setRunFor]     = useState<System|null>(null)
-  const [deleteFor,  setDeleteFor]  = useState<System|null>(null)
+  const [runFor,      setRunFor]      = useState<System|null>(null)
+  const [deleteFor,   setDeleteFor]   = useState<System|null>(null)
+  const [showNewSys,  setShowNewSys]  = useState(false)
+  const [newHostname, setNewHostname] = useState('')
+  const [newOS,       setNewOS]       = useState('')
+  const [newRisk,     setNewRisk]     = useState('standard')
+  const [newTags,     setNewTags]     = useState('')   // "key=value, key2=value2"
+  const [saving,      setSaving]      = useState(false)
+  const [saveErr,     setSaveErr]     = useState<string|null>(null)
   const [selPolicy,  setSelPolicy]  = useState('')
   const [creating,   setCreating]   = useState(false)
   const [deleting,   setDeleting]   = useState(false)
@@ -29,6 +36,28 @@ export function Systems() {
     .finally(() => setLoading(false))
 
   useEffect(() => { load() }, [])
+
+  async function createSystem() {
+    if (!newHostname.trim()) { setSaveErr('Hostname is required.'); return }
+    setSaving(true); setSaveErr(null)
+    try {
+      const tags: Record<string,string> = {}
+      newTags.split(',').forEach(t => {
+        const [k, v] = t.split('=').map(s => s.trim())
+        if (k && v) tags[k] = v
+      })
+      await post<System>('/v1/systems', {
+        Hostname:  newHostname.trim(),
+        OS:        newOS.trim() || undefined,
+        RiskClass: newRisk,
+        Tags:      Object.keys(tags).length ? tags : undefined,
+      })
+      setShowNewSys(false)
+      setNewHostname(''); setNewOS(''); setNewRisk('standard'); setNewTags('')
+      await load()
+    } catch { setSaveErr('Could not register system.') }
+    finally { setSaving(false) }
+  }
 
   async function deleteSystem() {
     if (!deleteFor) return
@@ -58,7 +87,12 @@ export function Systems() {
 
   return (
     <div style={s.page}>
-      <SectionHeader title="Systems" count={systems.length} />
+      <div style={s.topRow}>
+        <SectionHeader title="Systems" count={systems.length} />
+        <button onClick={() => { setShowNewSys(true); setSaveErr(null) }} style={s.newBtn}>
+          + New System
+        </button>
+      </div>
       {msg && <div style={s.msgBox} onClick={() => setMsg(null)}>{msg} ✕</div>}
       <Card>
         {loading ? <div style={s.load}>Loading…</div> : (
@@ -87,6 +121,43 @@ export function Systems() {
           />
         )}
       </Card>
+
+      {/* ── New System Modal ── */}
+      {showNewSys && (
+        <Modal title="Register New System" onClose={() => setShowNewSys(false)}>
+          <div style={s.field}>
+            <label style={s.flabel}>Hostname / Name <span style={s.req}>*</span></label>
+            <input style={s.finput} value={newHostname} onChange={e=>setNewHostname(e.target.value)}
+              placeholder="e.g. web-server-01, db-cluster-02, partner-site-a" autoFocus />
+          </div>
+          <div style={s.row2}>
+            <div style={s.field}>
+              <label style={s.flabel}>Operating System</label>
+              <input style={s.finput} value={newOS} onChange={e=>setNewOS(e.target.value)}
+                placeholder="e.g. Ubuntu 22.04, Windows Server 2022" />
+            </div>
+            <div style={s.field}>
+              <label style={s.flabel}>Risk Class</label>
+              <select style={s.fselect} value={newRisk} onChange={e=>setNewRisk(e.target.value)}>
+                <option value="standard">Standard</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+          </div>
+          <div style={s.field}>
+            <label style={s.flabel}>Tags <span style={s.hint}>(optional — key=value, kommasepariert)</span></label>
+            <input style={s.finput} value={newTags} onChange={e=>setNewTags(e.target.value)}
+              placeholder="env=prod, location=berlin, type=cluster" />
+          </div>
+          {saveErr && <div style={s.errBox}>{saveErr}</div>}
+          <div style={s.factions}>
+            <button onClick={() => setShowNewSys(false)} style={s.cancelBtn}>Cancel</button>
+            <button onClick={createSystem} disabled={saving || !newHostname.trim()} style={s.submitBtn}>
+              {saving ? 'Registering…' : '✓ Register System'}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {deleteFor && (
         <ConfirmDialog
@@ -126,6 +197,19 @@ export function Systems() {
 
 const s: Record<string,React.CSSProperties> = {
   page:      { padding:'28px 36px', maxWidth:1200 },
+  topRow:    { display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 },
+  newBtn:    { padding:'7px 16px', borderRadius:6, background:'var(--accent)', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' },
+  row2:      { display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 },
+  field:     { marginBottom:14 },
+  flabel:    { display:'block', fontSize:11, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:6 },
+  req:       { color:'var(--error)' },
+  hint:      { fontWeight:400, textTransform:'none' as const, fontSize:10, color:'var(--text-dim)', letterSpacing:0 },
+  finput:    { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
+  fselect:   { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, cursor:'pointer' },
+  errBox:    { background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.25)', borderRadius:6, padding:'8px 12px', fontSize:13, color:'var(--error)', marginBottom:8 },
+  factions:  { display:'flex', gap:8, justifyContent:'flex-end', paddingTop:16, borderTop:'1px solid var(--border)' },
+  cancelBtn: { padding:'7px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
+  submitBtn: { padding:'7px 20px', borderRadius:6, background:'var(--success)', color:'#000', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' },
   load:      { padding:40, color:'var(--text-muted)', textAlign:'center' },
   name:      { fontWeight:600, color:'var(--text)' },
   runBtn:    { padding:'4px 10px', borderRadius:5, background:'var(--accent-dim)', color:'var(--accent)', border:'1px solid rgba(59,130,246,0.3)', fontSize:11, fontWeight:600, cursor:'pointer' },
