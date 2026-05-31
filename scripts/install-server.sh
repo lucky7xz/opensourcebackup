@@ -129,7 +129,7 @@ docker compose -f "$OSB_INSTALL_DIR/docker-compose.yml" up -d
 info "Waiting for PostgreSQL to be ready (up to 60s)..."
 READY=0
 for i in {1..30}; do
-  if docker compose -f "$OSB_INSTALL_DIR/docker-compose.yml" exec -T postgres \
+  if docker exec opensourcebackup-postgres-1 \
       pg_isready -U "$DB_USER" &>/dev/null 2>&1; then
     READY=1; break
   fi
