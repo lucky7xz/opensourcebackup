@@ -5,9 +5,10 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 const VERSION = 'v0.1.0'
 
 const PLATFORMS = [
-  { id: 'windows-amd64', label: 'Windows',      icon: '🪟', sub: 'Windows Server / Workstation (64-bit)' },
-  { id: 'linux-amd64',   label: 'Linux x64',    icon: '🐧', sub: 'Debian, Ubuntu, RHEL, CentOS (64-bit)' },
-  { id: 'linux-arm64',   label: 'Linux ARM64',  icon: '🐧', sub: 'Raspberry Pi, ARM servers' },
+  { id: 'windows-amd64',  label: 'Windows',          icon: '🪟', sub: 'Windows Server / Workstation (64-bit)' },
+  { id: 'linux-amd64',    label: 'Linux x64',         icon: '🐧', sub: 'Debian, Ubuntu, RHEL, CentOS (64-bit)' },
+  { id: 'linux-arm64',    label: 'Linux ARM64',        icon: '🐧', sub: 'Raspberry Pi, ARM servers' },
+  { id: 'freebsd-amd64',  label: 'FreeBSD / OPNsense', icon: '👹', sub: 'OPNsense, pfSense, FreeBSD (64-bit)' },
 ]
 
 type Step = 'system' | 'platform' | 'config' | 'install'
@@ -86,6 +87,25 @@ $env:RESTIC_PASSWORD    = "${resticPass}"
 $env:RESTIC_REPO        = "${resticRepo}"
 $env:AGENT_POLL_INTERVAL= "${pollSec}s"
 .\\opensourcebackup-agent.exe`)
+    if (platform === 'freebsd-amd64') return (
+`# OPNsense / pfSense / FreeBSD — run in shell or via SSH:
+
+fetch -o /usr/local/bin/opensourcebackup-agent \\
+  "${cpUrl}/downloads/agent/${VERSION}/freebsd-amd64"
+chmod +x /usr/local/bin/opensourcebackup-agent
+
+# For OPNsense config backup — include these paths:
+# /conf/config.xml       ← main OPNsense configuration
+# /var/etc/              ← runtime config files
+# /usr/local/etc/        ← plugin configs
+
+CONTROL_PLANE_URL="${cpUrl}" \\
+ENROLLMENT_TOKEN="${token}" \\
+RESTIC_PASSWORD="${resticPass}" \\
+RESTIC_REPO="${resticRepo}" \\
+AGENT_POLL_INTERVAL="${pollSec}s" \\
+/usr/local/bin/opensourcebackup-agent`)
+
     return (
 `# Paste into your terminal:
 
