@@ -61,8 +61,12 @@ run-agent:
 
 # ── TLS Dev Certificate ──────────────────────────────────────────────────────
 # Generates a self-signed certificate using Go stdlib — no openssl required.
+# Usage:
+#   make certs                        # localhost only
+#   make certs TLS_IP=192.168.1.100   # + your LAN IP (for Proxmox/LAN access)
+TLS_IP ?=
 certs:
-	go run ./internal/tools/gencert/
+	go run ./internal/tools/gencert/ $(TLS_IP)
 
 # ── Agent Release Builds ─────────────────────────────────────────────────────
 VERSION ?= v0.1.0

@@ -20,6 +20,12 @@ type SystemStore interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	// UpdateLastSeen stamps last_seen = seenAt for the given system.
 	// Called on every agent heartbeat — intentionally lightweight (single-column UPDATE).
+	//
+	// Naming: the DB column is "last_seen" (not "last_seen_at") — this is intentional.
+	// The column was created in migration 000001 before this convention was discussed.
+	// Renaming would require a migration + model update + JSON API change.
+	// Consistency across DB / Go model (LastSeen) / JSON (LastSeen) / React (LastSeen) is maintained.
+	// If renamed in future: migration 000014 + update all four layers together.
 	UpdateLastSeen(ctx context.Context, id uuid.UUID, seenAt time.Time) error
 }
 

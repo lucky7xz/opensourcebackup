@@ -129,6 +129,18 @@ func main() {
 		addr = ":8080"
 	}
 
+	tlsCert     := os.Getenv("TLS_CERT_FILE")
+	tlsKey      := os.Getenv("TLS_KEY_FILE")
+	tlsEnabled  := tlsCert != "" && tlsKey != ""
+	tlsRequired := os.Getenv("TLS_REQUIRED") == "true"
+
+	// When TLS is required but not configured, refuse to start.
+	// This prevents accidental plaintext deployments in production.
+	if tlsRequired && !tlsEnabled {
+		logger.Error("TLS_REQUIRED=true but TLS_CERT_FILE/TLS_KEY_FILE not set — refusing to start in HTTP mode")
+		os.Exit(1)
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           httpHandler,
@@ -138,18 +150,47 @@ func main() {
 		IdleTimeout:       serverIdleTimeout,
 	}
 
-	tlsCert := os.Getenv("TLS_CERT_FILE")
-	tlsKey := os.Getenv("TLS_KEY_FILE")
-	tlsEnabled := tlsCert != "" && tlsKey != ""
+	// Optional HTTP→HTTPS redirect server.
+	// When TLS is enabled and HTTP_REDIRECT_ADDR is set, a minimal redirect
+	// server listens on that address and redirects all traffic to HTTPS.
+	// Example: LISTEN_ADDR=:8443 HTTP_REDIRECT_ADDR=:8080
+	var redirectSrv *http.Server
+	if tlsEnabled {
+		if redirectAddr := os.Getenv("HTTP_REDIRECT_ADDR"); redirectAddr != "" {
+			redirectSrv = &http.Server{
+				Addr:              redirectAddr,
+				ReadTimeout:       serverReadTimeout,
+				ReadHeaderTimeout: serverReadHeaderTimeout,
+				WriteTimeout:      serverWriteTimeout,
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					target := "https://" + r.Host + r.RequestURI
+					http.Redirect(w, r, target, http.StatusMovedPermanently)
+				}),
+			}
+			go func() {
+				logger.Info("HTTP redirect server started", "addr", redirectAddr, "redirects_to", "https")
+				if err := redirectSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.Error("redirect server error", "error", err)
+				}
+			}()
+		}
+	}
 
 	go func() {
 		if tlsEnabled {
-			logger.Info("control plane starting with HTTPS", "addr", addr, "cert", tlsCert)
+			logger.Info("control plane starting with HTTPS",
+				"addr", addr,
+				"cert", tlsCert,
+				"tls_required", tlsRequired,
+			)
 			if err := srv.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
 				logger.Error("server error", "error", err)
 			}
 		} else {
-			logger.Warn("HTTP mode — set TLS_CERT_FILE + TLS_KEY_FILE for production", "addr", addr)
+			logger.Warn("HTTP mode — tokens and data are transmitted unencrypted",
+				"addr", addr,
+				"hint", "set TLS_CERT_FILE + TLS_KEY_FILE for production use",
+			)
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Error("server error", "error", err)
 			}
@@ -160,6 +201,11 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancel()
+	if redirectSrv != nil {
+		if err := redirectSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("redirect server shutdown error", "error", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "error", err)
 	}
