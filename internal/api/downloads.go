@@ -38,6 +38,27 @@ func (h *Handler) downloadAgent(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 
+// serveInstallScript handles GET /scripts/install-agent.{sh,ps1}
+// Serves install scripts from the scripts/ directory.
+func (h *Handler) serveInstallScript(w http.ResponseWriter, r *http.Request) {
+	name := filepath.Base(r.URL.Path)
+	if !validName.MatchString(name) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join("scripts", name)
+	if _, err := os.Stat(path); err != nil {
+		http.Error(w, "script not found", http.StatusNotFound)
+		return
+	}
+	if filepath.Ext(name) == ".ps1" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	} else {
+		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+	}
+	http.ServeFile(w, r, path)
+}
+
 // listDownloads handles GET /downloads/agent — returns available binaries as JSON.
 func (h *Handler) listDownloads(w http.ResponseWriter, r *http.Request) {
 	type entry struct {

@@ -3,16 +3,33 @@ package api
 import (
 	"net/http"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/auth"
+	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
 
 // RegisterRoutes attaches all v1 API routes to mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
 
+	// ── Authentication (public — no session required) ──────────────────────
+	// Rate-limited separately: 5 attempts per minute per IP.
+	authLimiter := security.NewIPRateLimiter(5.0/60, 5)
+	authRateMiddleware := security.RateLimit(authLimiter)
+	mux.Handle("POST /auth/login",  authRateMiddleware(http.HandlerFunc(h.handleLogin)))
+	mux.Handle("POST /auth/logout", http.HandlerFunc(h.handleLogout))
+	mux.Handle("GET /auth/status",  http.HandlerFunc(h.handleAuthStatus))
+
 	// Agent binary downloads
 	mux.HandleFunc("GET /downloads/agent", h.listDownloads)
 	mux.HandleFunc("GET /downloads/agent/{version}/{platform}", h.downloadAgent)
+
+	// Agent install scripts (served from scripts/ directory)
+	mux.HandleFunc("GET /scripts/install-agent.sh", h.serveInstallScript)
+	mux.HandleFunc("GET /scripts/install-agent-freebsd.sh", h.serveInstallScript)
+	mux.HandleFunc("GET /scripts/install-agent.ps1", h.serveInstallScript)
+	// Local (all-in-one) installer script
+	mux.HandleFunc("GET /scripts/install-local.ps1", h.serveInstallScript)
 
 	// Enrollment (admin operation — protected by network/future admin auth)
 	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token", h.createEnrollmentToken)
@@ -71,6 +88,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /v1/restore-tests/{id}/fail", h.failRestoreTest)
 	mux.HandleFunc("DELETE /v1/restore-tests/{id}", h.deleteRestoreTest)
 
+	// ── Audit log (GDPR transparency) ─────────────────────────────────────
+	mux.HandleFunc("GET /v1/audit", h.handleAuditLog)
+
+	// ── GDPR — Art. 17 (erasure) + Art. 20 (portability) ─────────────────
+	mux.HandleFunc("GET /v1/gdpr/systems/{id}/export", h.handleGDPRExport)
+	mux.HandleFunc("DELETE /v1/gdpr/systems/{id}/purge", h.handleGDPRPurge)
+
 	// Web UI — served from WEB_UI_DIR (default: web/dist).
 	// All unknown paths fall through to index.html for React Router.
 	webDir := h.webUIDir()
@@ -84,5 +108,7 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// unused import guard
+// unused import guards
 var _ = auth.HashToken
+var _ = audit.NoopStore{}
+var _ = security.ClientIP

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenSourceBackup — Agent Install Script (Linux)
+# OpenSourceBackup — Agent Install Script (Linux / systemd)
 #
 # Usage:
 #   CONTROL_PLANE_URL=http://192.168.1.10:8080 \
@@ -9,7 +9,7 @@
 #   RESTIC_REPO=/mnt/backup/restic-repo \
 #   bash install-agent.sh
 #
-# Required variables:
+# Required:
 #   CONTROL_PLANE_URL   URL of your Control Plane
 #   ENROLLMENT_TOKEN    One-time enrollment token from the UI
 #   RESTIC_PASSWORD     Encryption password for backups
@@ -26,7 +26,6 @@ set -euo pipefail
 OSB_VERSION="${OSB_VERSION:-v0.1.0}"
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/opensourcebackup/agent"
-ENV_FILE="/etc/opensourcebackup/agent.env"
 SERVICE_NAME="opensourcebackup-agent"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -35,12 +34,11 @@ info() { echo -e "${CYAN}→${NC} $*"; }
 die()  { echo -e "${RED}✗ ERROR:${NC} $*" >&2; exit 1; }
 
 echo ""
-echo -e "${CYAN}OpenSourceBackup — Agent Installer${NC}"
+echo -e "${CYAN}OpenSourceBackup — Agent Installer (Linux)${NC}"
 echo ""
 
 [[ $EUID -eq 0 ]] || die "Run as root: sudo bash $0"
 
-# Validate required vars
 [[ -n "${CONTROL_PLANE_URL:-}" ]] || die "CONTROL_PLANE_URL is required"
 [[ -n "${ENROLLMENT_TOKEN:-}"  ]] || die "ENROLLMENT_TOKEN is required"
 [[ -n "${RESTIC_PASSWORD:-}"   ]] || die "RESTIC_PASSWORD is required"
@@ -48,9 +46,10 @@ echo ""
 
 # ── Step 1: Download Agent ────────────────────────────────────────────────────
 
-info "Downloading agent binary..."
+info "Detecting architecture..."
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 AGENT_BIN="$INSTALL_DIR/opensourcebackup-agent"
+info "Downloading agent (linux-${ARCH})..."
 
 curl -fsSL "${CONTROL_PLANE_URL}/downloads/agent/${OSB_VERSION}/linux-${ARCH}" \
   -o "$AGENT_BIN"
@@ -70,63 +69,48 @@ else
   ok "restic already installed ($(restic version | head -1))"
 fi
 
-# ── Step 3: Directories + Env ────────────────────────────────────────────────
+# ── Step 3: Directories ──────────────────────────────────────────────────────
 
-info "Creating directories..."
-mkdir -p "$DATA_DIR" /etc/opensourcebackup
+info "Creating data directory..."
+mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR"
+ok "Data directory: $DATA_DIR"
 
-cat > "$ENV_FILE" <<EOF
-CONTROL_PLANE_URL=${CONTROL_PLANE_URL}
-ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
-RESTIC_PASSWORD=${RESTIC_PASSWORD}
-RESTIC_REPO=${RESTIC_REPO}
-RESTIC_BIN=/usr/local/bin/restic
-AGENT_POLL_INTERVAL=${AGENT_POLL_INTERVAL:-30s}
-RESTORE_TEST_ROOT=${RESTORE_TEST_ROOT:-${DATA_DIR}/restore-tests}
-AGENT_TOKEN_FILE=${DATA_DIR}/agent-token
-EOF
-chmod 600 "$ENV_FILE"
-ok "Environment file: $ENV_FILE"
+# ── Step 4: Install service via agent binary ─────────────────────────────────
 
-# ── Step 4: systemd Service ──────────────────────────────────────────────────
+info "Installing systemd service..."
 
-info "Creating systemd service..."
-cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
-[Unit]
-Description=OpenSourceBackup Agent
-Documentation=https://github.com/cerberus8484/opensourcebackup
-After=network.target
+export CONTROL_PLANE_URL
+export ENROLLMENT_TOKEN
+export RESTIC_PASSWORD
+export RESTIC_REPO
+export RESTIC_BIN="/usr/local/bin/restic"
+export AGENT_POLL_INTERVAL="${AGENT_POLL_INTERVAL:-30s}"
+export RESTORE_TEST_ROOT="${RESTORE_TEST_ROOT:-${DATA_DIR}/restore-tests}"
+export AGENT_TOKEN_FILE="${DATA_DIR}/agent-token"
 
-[Service]
-Type=simple
-WorkingDirectory=${DATA_DIR}
-EnvironmentFile=${ENV_FILE}
-ExecStart=${AGENT_BIN}
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=${SERVICE_NAME}
+# The agent binary self-installs as a systemd service,
+# embedding the current environment variables.
+"$AGENT_BIN" install
+ok "systemd service installed (opensourcebackup-agent)"
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# ── Step 5: Start ─────────────────────────────────────────────────────────────
 
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-systemctl start "$SERVICE_NAME"
-sleep 3
+info "Starting service..."
+"$AGENT_BIN" start
+sleep 2
+"$AGENT_BIN" status
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
-ok "Agent installed and started!"
+echo -e "  ${GREEN}✓ Agent is running as a systemd service!${NC}"
 echo ""
 echo -e "  ${YELLOW}Commands:${NC}"
 echo -e "  Logs:     ${CYAN}journalctl -u ${SERVICE_NAME} -f${NC}"
-echo -e "  Status:   ${CYAN}systemctl status ${SERVICE_NAME}${NC}"
-echo -e "  Stop:     ${CYAN}systemctl stop ${SERVICE_NAME}${NC}"
-echo -e "  Restart:  ${CYAN}systemctl restart ${SERVICE_NAME}${NC}"
+echo -e "  Status:   ${CYAN}${AGENT_BIN} status${NC}"
+echo -e "  Stop:     ${CYAN}${AGENT_BIN} stop${NC}"
+echo -e "  Restart:  ${CYAN}${AGENT_BIN} restart${NC}"
+echo -e "  Remove:   ${CYAN}${AGENT_BIN} stop && ${AGENT_BIN} uninstall${NC}"
 echo ""
-echo -e "  Token stored at: ${CYAN}${DATA_DIR}/agent-token${NC}"
+echo -e "  Token:    ${CYAN}${DATA_DIR}/agent-token${NC}"
 echo ""

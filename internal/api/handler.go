@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
@@ -31,11 +32,14 @@ type Handler struct {
 	restoreTests     catalog.RestoreTestStore
 	enrollmentTokens auth.EnrollmentTokenStore
 	agentTokens      auth.AgentTokenStore
-	policyNotifier   PolicyChangeNotifier // may be nil
+	policyNotifier   PolicyChangeNotifier   // may be nil
+	webAuth          *auth.WebAuthenticator // may be nil (auth disabled in dev)
+	auditStore       audit.Store
 	log              *slog.Logger
 }
 
 // New creates a Handler wired to the given stores.
+// auditStore must not be nil — use audit.NoopStore{} to disable auditing.
 func New(
 	systems catalog.SystemStore,
 	repositories catalog.RepositoryStore,
@@ -45,8 +49,12 @@ func New(
 	restoreTests catalog.RestoreTestStore,
 	enrollmentTokens auth.EnrollmentTokenStore,
 	agentTokens auth.AgentTokenStore,
+	auditStore audit.Store,
 	log *slog.Logger,
 ) *Handler {
+	if auditStore == nil {
+		auditStore = audit.NoopStore{}
+	}
 	return &Handler{
 		systems:          systems,
 		repositories:     repositories,
@@ -56,8 +64,16 @@ func New(
 		restoreTests:     restoreTests,
 		enrollmentTokens: enrollmentTokens,
 		agentTokens:      agentTokens,
+		auditStore:       auditStore,
 		log:              log,
 	}
+}
+
+// WithWebAuth enables web-dashboard authentication.
+// When wa is nil the dashboard is accessible without login (dev mode).
+func (h *Handler) WithWebAuth(wa *auth.WebAuthenticator) *Handler {
+	h.webAuth = wa
+	return h
 }
 
 // WithPolicyNotifier wires a PolicyChangeNotifier into the handler.

@@ -76,49 +76,44 @@ export function Agents() {
 
   function installCmd() {
     if (platform === 'windows-amd64') return (
-`# Paste these commands into PowerShell — one block:
-
-Invoke-WebRequest "${cpUrl}/downloads/agent/${VERSION}/windows-amd64" \`
-  -OutFile opensourcebackup-agent.exe
+`# Run as Administrator in PowerShell:
+# Installs agent as a permanent Windows Service (auto-starts on boot)
 
 $env:CONTROL_PLANE_URL  = "${cpUrl}"
 $env:ENROLLMENT_TOKEN   = "${token}"
 $env:RESTIC_PASSWORD    = "${resticPass}"
 $env:RESTIC_REPO        = "${resticRepo}"
 $env:AGENT_POLL_INTERVAL= "${pollSec}s"
-.\\opensourcebackup-agent.exe`)
+
+Invoke-WebRequest "${cpUrl}/scripts/install-agent.ps1" \`
+  -OutFile install-agent.ps1
+.\\install-agent.ps1`)
+
     if (platform === 'freebsd-amd64') return (
-`# OPNsense / pfSense / FreeBSD — run in shell or via SSH:
+`# OPNsense / pfSense / FreeBSD — run as root via SSH or shell:
+# Installs agent as a permanent rc.d service (auto-starts on boot)
 
-fetch -o /usr/local/bin/opensourcebackup-agent \\
-  "${cpUrl}/downloads/agent/${VERSION}/freebsd-amd64"
-chmod +x /usr/local/bin/opensourcebackup-agent
-
-# For OPNsense config backup — include these paths:
-# /conf/config.xml       ← main OPNsense configuration
-# /var/etc/              ← runtime config files
-# /usr/local/etc/        ← plugin configs
+# For OPNsense config backup — recommended paths:
+# /conf/config.xml       <- main OPNsense configuration
+# /var/etc/              <- runtime config files
+# /usr/local/etc/        <- plugin configs
 
 CONTROL_PLANE_URL="${cpUrl}" \\
 ENROLLMENT_TOKEN="${token}" \\
 RESTIC_PASSWORD="${resticPass}" \\
 RESTIC_REPO="${resticRepo}" \\
 AGENT_POLL_INTERVAL="${pollSec}s" \\
-/usr/local/bin/opensourcebackup-agent`)
+sh -c "$(fetch -qo - ${cpUrl}/scripts/install-agent-freebsd.sh)"`)
 
     return (
-`# Paste into your terminal:
-
-curl -fsSL "${cpUrl}/downloads/agent/${VERSION}/${platform}" \\
-  -o /usr/local/bin/opensourcebackup-agent
-chmod +x /usr/local/bin/opensourcebackup-agent
+`# Run as root — installs agent as a permanent systemd service:
 
 CONTROL_PLANE_URL="${cpUrl}" \\
 ENROLLMENT_TOKEN="${token}" \\
 RESTIC_PASSWORD="${resticPass}" \\
 RESTIC_REPO="${resticRepo}" \\
 AGENT_POLL_INTERVAL="${pollSec}s" \\
-/usr/local/bin/opensourcebackup-agent`)
+bash <(curl -fsSL ${cpUrl}/scripts/install-agent.sh)`)
   }
 
   function reset() {
@@ -323,8 +318,12 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
             </div>
 
             <div style={s.infoBox}>
-              The agent will enroll automatically on first run and save the token to <code style={s.code}>data/agent-token</code>.
-              On subsequent starts, only <code style={s.code}>CONTROL_PLANE_URL</code>, <code style={s.code}>RESTIC_PASSWORD</code> and <code style={s.code}>RESTIC_REPO</code> are needed.
+              {platform === 'windows-amd64'
+                ? <>The script installs the agent as a <strong>Windows Service</strong> that auto-starts on every boot. The enrollment token is used once; the permanent agent token is stored in <code style={s.code}>C:\ProgramData\opensourcebackup\agent-token</code>.</>
+                : platform === 'freebsd-amd64'
+                ? <>The script installs the agent as an <strong>rc.d service</strong> (FreeBSD/OPNsense) that auto-starts on every boot. The permanent agent token is stored in <code style={s.code}>/var/db/opensourcebackup/agent/agent-token</code>.</>
+                : <>The script installs the agent as a <strong>systemd service</strong> that auto-starts on every boot. The enrollment token is used once; the permanent agent token is stored in <code style={s.code}>/var/lib/opensourcebackup/agent/agent-token</code>.</>
+              }
             </div>
 
             {/* Stop / Start / Restart commands */}
@@ -334,23 +333,56 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
               <>
                 <div style={s.cmdRow}>
                   <span style={s.cmdLabel}>Stop</span>
-                  <pre style={s.cmdLine}>Stop-Process -Name "opensourcebackup-agent" -Force</pre>
-                  <button onClick={() => navigator.clipboard.writeText('Stop-Process -Name "opensourcebackup-agent" -Force')} style={s.copySmall}>📋</button>
+                  <pre style={s.cmdLine}>C:\ProgramData\opensourcebackup\opensourcebackup-agent.exe stop</pre>
+                  <button onClick={() => navigator.clipboard.writeText('C:\\ProgramData\\opensourcebackup\\opensourcebackup-agent.exe stop')} style={s.copySmall}>📋</button>
                 </div>
                 <div style={s.cmdRow}>
                   <span style={s.cmdLabel}>Start</span>
-                  <pre style={s.cmdLine}>{`$env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`}</pre>
-                  <button onClick={() => navigator.clipboard.writeText(`$env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`)} style={s.copySmall}>📋</button>
+                  <pre style={s.cmdLine}>C:\ProgramData\opensourcebackup\opensourcebackup-agent.exe start</pre>
+                  <button onClick={() => navigator.clipboard.writeText('C:\\ProgramData\\opensourcebackup\\opensourcebackup-agent.exe start')} style={s.copySmall}>📋</button>
                 </div>
                 <div style={s.cmdRow}>
                   <span style={s.cmdLabel}>Restart</span>
-                  <pre style={s.cmdLine}>{`Stop-Process -Name "opensourcebackup-agent" -Force -ErrorAction SilentlyContinue; Start-Sleep 1; $env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`}</pre>
-                  <button onClick={() => navigator.clipboard.writeText(`Stop-Process -Name "opensourcebackup-agent" -Force -ErrorAction SilentlyContinue; Start-Sleep 1; $env:CONTROL_PLANE_URL="${cpUrl}"; $env:RESTIC_PASSWORD="${resticPass}"; $env:RESTIC_REPO="${resticRepo}"; .\\opensourcebackup-agent.exe`)} style={s.copySmall}>📋</button>
+                  <pre style={s.cmdLine}>C:\ProgramData\opensourcebackup\opensourcebackup-agent.exe restart</pre>
+                  <button onClick={() => navigator.clipboard.writeText('C:\\ProgramData\\opensourcebackup\\opensourcebackup-agent.exe restart')} style={s.copySmall}>📋</button>
                 </div>
                 <div style={s.cmdRow}>
                   <span style={s.cmdLabel}>Status</span>
-                  <pre style={s.cmdLine}>Get-Process -Name "opensourcebackup-agent" -ErrorAction SilentlyContinue</pre>
-                  <button onClick={() => navigator.clipboard.writeText('Get-Process -Name "opensourcebackup-agent" -ErrorAction SilentlyContinue')} style={s.copySmall}>📋</button>
+                  <pre style={s.cmdLine}>C:\ProgramData\opensourcebackup\opensourcebackup-agent.exe status</pre>
+                  <button onClick={() => navigator.clipboard.writeText('C:\\ProgramData\\opensourcebackup\\opensourcebackup-agent.exe status')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Remove</span>
+                  <pre style={s.cmdLine}>.\install-agent.ps1 -Uninstall</pre>
+                  <button onClick={() => navigator.clipboard.writeText('.\\install-agent.ps1 -Uninstall')} style={s.copySmall}>📋</button>
+                </div>
+              </>
+            ) : platform === 'freebsd-amd64' ? (
+              <>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Stop</span>
+                  <pre style={s.cmdLine}>service opensourcebackup_agent stop</pre>
+                  <button onClick={() => navigator.clipboard.writeText('service opensourcebackup_agent stop')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Start</span>
+                  <pre style={s.cmdLine}>service opensourcebackup_agent start</pre>
+                  <button onClick={() => navigator.clipboard.writeText('service opensourcebackup_agent start')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Restart</span>
+                  <pre style={s.cmdLine}>service opensourcebackup_agent restart</pre>
+                  <button onClick={() => navigator.clipboard.writeText('service opensourcebackup_agent restart')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Status</span>
+                  <pre style={s.cmdLine}>/usr/local/bin/opensourcebackup-agent status</pre>
+                  <button onClick={() => navigator.clipboard.writeText('/usr/local/bin/opensourcebackup-agent status')} style={s.copySmall}>📋</button>
+                </div>
+                <div style={s.cmdRow}>
+                  <span style={s.cmdLabel}>Logs</span>
+                  <pre style={s.cmdLine}>tail -f /var/log/opensourcebackup-agent.log</pre>
+                  <button onClick={() => navigator.clipboard.writeText('tail -f /var/log/opensourcebackup-agent.log')} style={s.copySmall}>📋</button>
                 </div>
               </>
             ) : (

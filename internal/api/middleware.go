@@ -78,19 +78,54 @@ func CORS(allowedOrigin string) func(http.Handler) http.Handler {
 	}
 }
 
-// SecurityHeaders sets hardened HTTP response headers on every response.
-// Note: Strict-Transport-Security is included but only takes effect over TLS.
+// SecurityHeaders sets hardened HTTP response headers.
+// Uses a strict CSP — API endpoints only, no UI assets.
+// Note: HSTS only takes effect over TLS.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("X-XSS-Protection", "1; mode=block")
-		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		h.Set("Content-Security-Policy", "default-src 'self'")
-		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		setCommonSecurityHeaders(w)
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// SecurityHeadersCSP sets hardened HTTP response headers with a CSP that allows
+// the React SPA to load fonts (Google Fonts CDN) and inline styles (Vite build).
+// Used as the top-level middleware wrapping the full mux.
+func SecurityHeadersCSP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setCommonSecurityHeaders(w)
+		// TODO(security): Remove 'unsafe-inline' before production hardening.
+		// Current requirement: Vite's build injects inline styles; Google Fonts CDN
+		// is used for Inter + JetBrains Mono. Roadmap:
+		//   1. Replace Google Fonts with self-hosted font files → drop fonts.googleapis.com
+		//   2. Configure Vite to extract CSS to separate files → drop style unsafe-inline
+		//   3. Use script nonces for any remaining inline scripts → drop script unsafe-inline
+		// Tracking issue: #security-csp-hardening
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self' 'unsafe-inline'; "+          // TODO: replace with nonces
+				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+ // TODO: self-host fonts
+				"font-src 'self' https://fonts.gstatic.com data:; "+
+				"img-src 'self' data:; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'",
+		)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func setCommonSecurityHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("X-XSS-Protection", "0")    // deprecated; modern browsers ignore it — CSP is the real defence
+	h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+	// HSTS without preload: preload requires domain registration at hstspreload.org
+	// and locks all subdomains permanently. Enable preload only after TLS is fully
+	// configured and the domain is stable.
+	h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 }
 
 // RequestBodyLimit caps incoming request bodies at maxBytes.

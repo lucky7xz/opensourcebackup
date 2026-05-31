@@ -1,6 +1,7 @@
 .PHONY: deps test test-integration fmt lint lint-warn check lint-install run run-https certs \
         migrate-up migrate-down migrate-status \
-        dev-up dev-down
+        dev-up dev-down \
+        build-agent-freebsd build-agent-all build-server-all build-all release
 
 # ── Config ─────────────────────────────────────────────────────────────────
 DATABASE_URL     ?= postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
@@ -78,7 +79,10 @@ build-agent-linux-arm64:
 build-agent-darwin:
 	GOOS=darwin GOARCH=arm64 go build -o dist/agent/$(VERSION)/opensourcebackup-agent-darwin-arm64 $(AGENT)
 
-build-agent-all: build-agent-windows build-agent-linux build-agent-linux-arm64 build-agent-darwin
+build-agent-freebsd:
+	GOOS=freebsd GOARCH=amd64 go build -o dist/agent/$(VERSION)/opensourcebackup-agent-freebsd-amd64 $(AGENT)
+
+build-agent-all: build-agent-windows build-agent-linux build-agent-linux-arm64 build-agent-freebsd build-agent-darwin
 
 build-server-linux:
 	GOOS=linux GOARCH=amd64 go build -o dist/server/$(VERSION)/opensourcebackup-server-linux-amd64 $(CONTROL_PLANE)
@@ -89,6 +93,16 @@ build-server-linux-arm64:
 build-server-all: build-server-linux build-server-linux-arm64
 
 build-all: build-agent-all build-server-all
+
+# ── Windows Installer (MSI + EXE) ────────────────────────────────────────────
+# Requires: NSIS (makensis) + WiX (dotnet tool install -g wix)
+# On Linux/CI: install wine + nsis or use GitHub Actions Windows runner
+installer-windows: build-agent-windows
+	powershell -File scripts/build-release.ps1 -Version $(VERSION)
+
+# ── Full release (binaries + installers + checksums) ─────────────────────────
+release: build-all
+	powershell -File scripts/build-release.ps1 -Version $(VERSION)
 
 # ── Migrations ──────────────────────────────────────────────────────────────
 # Requires: go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest

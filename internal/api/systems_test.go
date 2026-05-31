@@ -25,6 +25,7 @@ func newTestHandler() *api.Handler {
 		newStubRestoreTestStore(),
 		newStubEnrollmentTokenStore(),
 		newStubAgentTokenStore(),
+		nil, // audit.NoopStore — no DB in unit tests
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	) // no PolicyChangeNotifier in tests — nil is fine
 }
