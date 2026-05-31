@@ -5,7 +5,7 @@
 🇩🇪 Deutsch | 🇬🇧 [English Version](README.md)
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
 
 ---
@@ -267,7 +267,7 @@ Siehe [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Lizenz
 
-[MIT](LICENSE) — © 2026 cerberus8484
+[Apache-2.0](LICENSE) — © 2026 cerberus8484
 
 ---
 
