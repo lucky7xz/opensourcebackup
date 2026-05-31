@@ -269,6 +269,78 @@ func (s *stubSnapshotStore) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// stubRestoreTestStore is an in-memory RestoreTestStore for unit tests.
+type stubRestoreTestStore struct {
+	tests map[uuid.UUID]*catalog.RestoreTest
+}
+
+func newStubRestoreTestStore() *stubRestoreTestStore {
+	return &stubRestoreTestStore{tests: make(map[uuid.UUID]*catalog.RestoreTest)}
+}
+
+func (s *stubRestoreTestStore) Create(_ context.Context, rt *catalog.RestoreTest) error {
+	rt.ID = uuid.New()
+	cp := *rt
+	s.tests[rt.ID] = &cp
+	return nil
+}
+func (s *stubRestoreTestStore) GetByID(_ context.Context, id uuid.UUID) (*catalog.RestoreTest, error) {
+	rt, ok := s.tests[id]
+	if !ok {
+		return nil, catalog.ErrNotFound
+	}
+	cp := *rt
+	return &cp, nil
+}
+func (s *stubRestoreTestStore) List(_ context.Context) ([]catalog.RestoreTest, error) {
+	out := make([]catalog.RestoreTest, 0, len(s.tests))
+	for _, rt := range s.tests {
+		out = append(out, *rt)
+	}
+	return out, nil
+}
+func (s *stubRestoreTestStore) ListBySnapshotID(_ context.Context, id uuid.UUID) ([]catalog.RestoreTest, error) {
+	var out []catalog.RestoreTest
+	for _, rt := range s.tests {
+		if rt.SnapshotID == id {
+			out = append(out, *rt)
+		}
+	}
+	return out, nil
+}
+func (s *stubRestoreTestStore) ListBySystemID(_ context.Context, id uuid.UUID) ([]catalog.RestoreTest, error) {
+	var out []catalog.RestoreTest
+	for _, rt := range s.tests {
+		if rt.SystemID == id {
+			out = append(out, *rt)
+		}
+	}
+	return out, nil
+}
+func (s *stubRestoreTestStore) Update(_ context.Context, rt *catalog.RestoreTest) error {
+	if _, ok := s.tests[rt.ID]; !ok {
+		return catalog.ErrNotFound
+	}
+	cp := *rt
+	s.tests[rt.ID] = &cp
+	return nil
+}
+func (s *stubRestoreTestStore) Delete(_ context.Context, id uuid.UUID) error {
+	if _, ok := s.tests[id]; !ok {
+		return catalog.ErrNotFound
+	}
+	delete(s.tests, id)
+	return nil
+}
+func (s *stubRestoreTestStore) HasSuccessfulTest(_ context.Context, snapshotID uuid.UUID) (bool, error) {
+	for _, rt := range s.tests {
+		if rt.SnapshotID == snapshotID && rt.Status == "success" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // stubPolicyStore is an in-memory PolicyStore for unit tests.
 type stubPolicyStore struct {
 	policies map[uuid.UUID]*catalog.BackupPolicy

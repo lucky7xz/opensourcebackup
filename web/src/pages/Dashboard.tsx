@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
-import { api, fmt, timeAgo, duration, type BackupJob, type Snapshot, type System } from '../api'
+import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System } from '../api'
 import { HealthCard, SectionHeader, Card } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
 
 export function Dashboard() {
-  const [systems,   setSystems]   = useState<System[]>([])
-  const [jobs,      setJobs]      = useState<BackupJob[]>([])
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [loading,   setLoading]   = useState(true)
+  const [systems,      setSystems]      = useState<System[]>([])
+  const [jobs,         setJobs]         = useState<BackupJob[]>([])
+  const [snapshots,    setSnapshots]    = useState<Snapshot[]>([])
+  const [restoreTests, setRestoreTests] = useState<RestoreTest[]>([])
+  const [loading,      setLoading]      = useState(true)
 
   useEffect(() => {
-    Promise.all([api.systems(), api.jobs(), api.snapshots()])
-      .then(([s,j,sn]) => { setSystems(s); setJobs(j); setSnapshots(sn) })
+    Promise.all([api.systems(), api.jobs(), api.snapshots(), api.restoreTests()])
+      .then(([s,j,sn,rt]) => { setSystems(s); setJobs(j); setSnapshots(sn); setRestoreTests(rt) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -22,8 +23,11 @@ export function Dashboard() {
   const failed    = jobs.filter(j => j.Status==='failed').length
   const running   = jobs.filter(j => j.Status==='running'||j.Status==='pending').length
   const totalBytes = jobs.reduce((a,j) => a+(j.BytesUploaded??0), 0)
-  // restore tested: placeholder (B13 not yet built)
-  const restoreTested = 0
+  // Restore Tested: % of snapshots with at least one successful restore test
+  const testedCount  = snapshots.filter(sn =>
+    restoreTests.some(rt => rt.SnapshotID===sn.ID && rt.Status==='success')
+  ).length
+  const restoreTested = snapshots.length > 0 ? Math.round((testedCount/snapshots.length)*100) : 0
 
   const recentFailed = jobs
     .filter(j => j.Status==='failed')

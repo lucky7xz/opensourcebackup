@@ -1,70 +1,169 @@
-import { SectionHeader } from '../components/Card'
+import { useEffect, useState } from 'react'
+import { api, duration, timeAgo, type RestoreTest, type Snapshot } from '../api'
+import { Card, SectionHeader } from '../components/Card'
+import { StatusBadge } from '../components/StatusBadge'
+import { Table } from '../components/Table'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { Modal } from '../components/Modal'
 
 export function RestoreTests() {
+  const [tests,      setTests]      = useState<RestoreTest[]>([])
+  const [snapshots,  setSnapshots]  = useState<Snapshot[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [showNew,    setShowNew]    = useState(false)
+  const [selSnap,    setSelSnap]    = useState('')
+  const [targetPath, setTargetPath] = useState('')
+  const [creating,   setCreating]   = useState(false)
+  const [deleteFor,  setDeleteFor]  = useState<RestoreTest|null>(null)
+  const [err,        setErr]        = useState<string|null>(null)
+
+  const load = () => Promise.all([api.restoreTests(), api.snapshots()])
+    .then(([t,s]) => { setTests(t); setSnapshots(s) })
+    .finally(() => setLoading(false))
+
+  useEffect(() => { load() }, [])
+
+  async function create() {
+    if (!selSnap) { setErr('Select a snapshot.'); return }
+    setCreating(true); setErr(null)
+    try {
+      await api.createRestoreTest(selSnap, targetPath || undefined)
+      setShowNew(false); setSelSnap(''); setTargetPath(''); await load()
+    } catch { setErr('Failed to create restore test. Is the snapshot valid?') }
+    finally { setCreating(false) }
+  }
+
+  const snapName = (id: string) => {
+    const sn = snapshots.find(s => s.ID === id)
+    return sn ? sn.EngineSnapshotID.slice(0,12)+'…' : id.slice(0,8)+'…'
+  }
+
+  const total  = snapshots.length
+  const tested = snapshots.filter(s => tests.some(t => t.SnapshotID===s.ID && t.Status==='success')).length
+  const pct    = total > 0 ? Math.round((tested/total)*100) : 0
+
   return (
     <div style={s.page}>
-      <SectionHeader title="Restore Tests" />
-
-      <div style={s.hero}>
-        <div style={s.heroIcon}>✓</div>
-        <h2 style={s.heroTitle}>Restore Verification</h2>
-        <p style={s.heroSub}>
-          This is where you prove your backups work.<br />
-          A backup is only as good as the last successful restore.
-        </p>
+      <div style={s.topRow}>
+        <SectionHeader title="Restore Tests" count={tests.length} />
+        <button onClick={() => { setShowNew(true); setErr(null) }} style={s.newBtn}>
+          + New Restore Test
+        </button>
       </div>
 
-      <div style={s.grid}>
-        <div style={s.card}>
-          <div style={s.cardIcon}>📦</div>
-          <h3 style={s.cardTitle}>What restore tests do</h3>
-          <ul style={s.list}>
-            <li>Select a snapshot</li>
-            <li>Restore to a sandbox target path</li>
-            <li>Verify file count and checksums</li>
-            <li>Report: verified, failed, or error</li>
-          </ul>
+      <div style={s.summary}>
+        <div style={s.summaryCard}>
+          <div style={{ fontSize:32, fontWeight:700, color: pct>0?'var(--success)':'var(--warning)' }}>{pct}%</div>
+          <div style={s.summaryLabel}>Snapshots restore-tested</div>
+          <div style={s.summaryDetail}>{tested} of {total} snapshots verified</div>
         </div>
-        <div style={s.card}>
-          <div style={s.cardIcon}>🗓</div>
-          <h3 style={s.cardTitle}>Planned: B13 Restore Test Model</h3>
-          <ul style={s.list}>
-            <li>restore_tests table in PostgreSQL</li>
-            <li>API: POST /v1/restore-tests</li>
-            <li>Agent: runs restore to temp dir</li>
-            <li>Reports verified_files, verified_bytes</li>
-          </ul>
-        </div>
-        <div style={s.card}>
-          <div style={s.cardIcon}>⚙</div>
-          <h3 style={s.cardTitle}>Planned: B14 Restore Runner</h3>
-          <ul style={s.list}>
-            <li>restic restore to sandbox path</li>
-            <li>File count verification</li>
-            <li>Checksum validation</li>
-            <li>Automatic scheduling</li>
-          </ul>
+        <div style={s.summaryInfo}>
+          <h3 style={s.infoTitle}>Why restore tests matter</h3>
+          <p style={s.infoText}>
+            A backup is only proven when a restore succeeds.
+            Create a restore test for each snapshot to verify
+            your data can actually be recovered.
+          </p>
+          <p style={s.infoText}>
+            After B14 (Restore Runner), tests will run automatically
+            and verify file counts and checksums.
+          </p>
         </div>
       </div>
 
-      <div style={s.notice}>
-        <strong>Coming in B13 + B14.</strong> Until then, restore tests must be run manually
-        and results recorded outside the system.
-      </div>
+      <Card>
+        {loading ? <div style={s.load}>Loading…</div> : (
+          <Table
+            cols={[
+              { header:'Status',         render:t => <StatusBadge status={t.Status} />, width:'110px' },
+              { header:'Snapshot',       render:t => <span style={s.mono}>{snapName(t.SnapshotID)}</span> },
+              { header:'Verified Files', render:t => t.VerifiedFiles != null
+                  ? <span style={{color:'var(--success)'}}>{t.VerifiedFiles} files</span>
+                  : <span style={s.dim}>—</span> },
+              { header:'Verified Bytes', render:t => t.VerifiedBytes != null
+                  ? <span style={{color:'var(--success)'}}>{(t.VerifiedBytes/1024).toFixed(1)} KB</span>
+                  : <span style={s.dim}>—</span> },
+              { header:'Duration',       render:t => duration(t.StartedAt, t.FinishedAt) },
+              { header:'Created',        render:t => timeAgo(t.CreatedAt) },
+              { header:'Error',          render:t => t.ErrorSummary
+                  ? <span style={{color:'var(--error)',fontSize:11}}>{t.ErrorSummary}</span>
+                  : <span style={s.dim}>—</span> },
+              { header:'', render:t => (
+                  <button onClick={() => setDeleteFor(t)} style={s.delBtn}>🗑</button>
+                ), width:'40px' },
+            ]}
+            rows={tests} keyFn={t => t.ID}
+            empty="No restore tests yet. Create one to verify your backups can be restored."
+          />
+        )}
+      </Card>
+
+      {showNew && (
+        <Modal title="New Restore Test" onClose={() => { setShowNew(false); setErr(null) }}>
+          <div style={s.field}>
+            <label style={s.label}>Snapshot <span style={{color:'var(--error)'}}>*</span></label>
+            <select style={s.select} value={selSnap} onChange={e => setSelSnap(e.target.value)}>
+              <option value="">— select snapshot —</option>
+              {snapshots.map(sn => (
+                <option key={sn.ID} value={sn.ID}>
+                  {sn.EngineSnapshotID.slice(0,16)}… — {new Date(sn.CreatedAt).toLocaleDateString()}
+                  {sn.Paths?.length ? ` (${sn.Paths[0]})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={s.field}>
+            <label style={s.label}>Target Path <span style={s.hint}>(optional sandbox path)</span></label>
+            <input style={s.input} value={targetPath} onChange={e => setTargetPath(e.target.value)}
+              placeholder="e.g. C:/tmp/restore-test or /tmp/restore-sandbox" />
+            <div style={s.hint2}>Leave empty — restore runner will use a default sandbox in B14.</div>
+          </div>
+          {err && <div style={s.errBox}>{err}</div>}
+          <div style={s.actions}>
+            <button onClick={() => { setShowNew(false); setErr(null) }} style={s.cancelBtn}>Cancel</button>
+            <button onClick={create} disabled={creating || !selSnap} style={s.submitBtn}>
+              {creating ? 'Creating…' : '✓ Create Restore Test'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {deleteFor && (
+        <ConfirmDialog
+          title="Delete restore test?"
+          message={`Delete this ${deleteFor.Status} restore test? The snapshot itself is not affected.`}
+          confirmLabel="Delete" danger
+          onConfirm={async () => { await api.deleteRestoreTest(deleteFor.ID); setDeleteFor(null); await load() }}
+          onCancel={() => setDeleteFor(null)}
+        />
+      )}
     </div>
   )
 }
 
 const s: Record<string,React.CSSProperties> = {
-  page:      { padding:'28px 36px', maxWidth:900 },
-  hero:      { textAlign:'center', padding:'40px 20px', background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius)', marginBottom:24 },
-  heroIcon:  { fontSize:40, color:'var(--success)', marginBottom:12 },
-  heroTitle: { fontSize:22, fontWeight:700, color:'var(--text)', marginBottom:8 },
-  heroSub:   { fontSize:14, color:'var(--text-muted)', lineHeight:1.7 },
-  grid:      { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:20 },
-  card:      { background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius)', padding:'18px 20px' },
-  cardIcon:  { fontSize:24, marginBottom:10 },
-  cardTitle: { fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:10 },
-  list:      { paddingLeft:16, color:'var(--text-muted)', fontSize:13, lineHeight:2 },
-  notice:    { background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:'var(--radius)', padding:'12px 16px', fontSize:13, color:'var(--text-muted)' },
+  page:         { padding:'28px 36px', maxWidth:1200 },
+  topRow:       { display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 },
+  newBtn:       { padding:'7px 16px', borderRadius:6, background:'var(--accent)', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' },
+  summary:      { display:'grid', gridTemplateColumns:'200px 1fr', gap:16, marginBottom:20, background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:10, padding:'20px 24px' },
+  summaryCard:  { textAlign:'center' as const, padding:'8px 0' },
+  summaryLabel: { fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.06em', marginTop:6 },
+  summaryDetail:{ fontSize:11, color:'var(--text-dim)', marginTop:4 },
+  summaryInfo:  { borderLeft:'1px solid var(--border)', paddingLeft:20 },
+  infoTitle:    { fontSize:14, fontWeight:700, color:'var(--text)', marginBottom:8 },
+  infoText:     { fontSize:13, color:'var(--text-muted)', lineHeight:1.6, marginBottom:8 },
+  load:         { padding:40, color:'var(--text-muted)', textAlign:'center' },
+  mono:         { fontFamily:'var(--font-mono)', fontSize:12, color:'var(--accent)' },
+  dim:          { color:'var(--text-dim)', fontSize:12 },
+  delBtn:       { padding:'3px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
+  field:        { marginBottom:16 },
+  label:        { display:'block', fontSize:11, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:6 },
+  hint:         { fontWeight:400, textTransform:'none' as const, fontSize:10, color:'var(--text-dim)', letterSpacing:0 },
+  hint2:        { fontSize:11, color:'var(--text-dim)', marginTop:4 },
+  select:       { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, cursor:'pointer' },
+  input:        { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
+  errBox:       { background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.25)', borderRadius:6, padding:'8px 12px', fontSize:13, color:'var(--error)', marginBottom:8 },
+  actions:      { display:'flex', gap:8, justifyContent:'flex-end', paddingTop:16, borderTop:'1px solid var(--border)' },
+  cancelBtn:    { padding:'7px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
+  submitBtn:    { padding:'7px 20px', borderRadius:6, background:'var(--success)', color:'#000', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' },
 }

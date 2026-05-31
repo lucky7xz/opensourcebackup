@@ -41,6 +41,23 @@ type BackupPolicy struct {
 	CreatedAt    time.Time
 }
 
+// RestoreTest records the result of verifying a snapshot can be restored.
+type RestoreTest struct {
+	ID            uuid.UUID
+	SnapshotID    uuid.UUID
+	SystemID      uuid.UUID
+	RepositoryID  uuid.UUID
+	Status        string
+	TargetPath    *string
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	VerifiedFiles *int
+	VerifiedBytes *int64
+	ErrorSummary  *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 // BackupJob and Snapshot are models only — repositories added in B3.
 
 type BackupJob struct {

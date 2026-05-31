@@ -63,6 +63,7 @@ func main() {
 		catalog.NewPolicyStore(db),
 		catalog.NewJobStore(db),
 		catalog.NewSnapshotStore(db),
+		catalog.NewRestoreTestStore(db),
 		auth.NewEnrollmentTokenStore(db),
 		auth.NewAgentTokenStore(db),
 		logger,

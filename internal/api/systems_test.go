@@ -22,10 +22,11 @@ func newTestHandler() *api.Handler {
 		newStubPolicyStore(),
 		newStubJobStore(),
 		newStubSnapshotStore(),
+		newStubRestoreTestStore(),
 		newStubEnrollmentTokenStore(),
 		newStubAgentTokenStore(),
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
-	)
+	) // no PolicyChangeNotifier in tests — nil is fine
 }
 
 func newMux(h *api.Handler) *http.ServeMux {

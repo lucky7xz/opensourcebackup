@@ -56,6 +56,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/snapshots", h.createSnapshot)
 	mux.HandleFunc("GET /v1/snapshots/{id}", h.getSnapshot)
 	mux.HandleFunc("DELETE /v1/snapshots/{id}", h.deleteSnapshot)
+
+	mux.HandleFunc("GET /v1/restore-tests", h.listRestoreTests)
+	mux.HandleFunc("POST /v1/restore-tests", h.createRestoreTest)
+	mux.HandleFunc("GET /v1/restore-tests/{id}", h.getRestoreTest)
+	mux.HandleFunc("PUT /v1/restore-tests/{id}/start", h.startRestoreTest)
+	mux.HandleFunc("PUT /v1/restore-tests/{id}/complete", h.completeRestoreTest)
+	mux.HandleFunc("PUT /v1/restore-tests/{id}/fail", h.failRestoreTest)
+	mux.HandleFunc("DELETE /v1/restore-tests/{id}", h.deleteRestoreTest)
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

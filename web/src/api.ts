@@ -37,6 +37,13 @@ export interface Snapshot {
   ID: string; JobID: string; RepositoryID: string; EngineSnapshotID: string
   Hostname?: string; Paths?: string[]; ChecksumStatus: string; CreatedAt: string
 }
+export interface RestoreTest {
+  ID: string; SnapshotID: string; SystemID: string; RepositoryID: string
+  Status: string; TargetPath?: string
+  StartedAt?: string; FinishedAt?: string
+  VerifiedFiles?: number; VerifiedBytes?: number
+  ErrorSummary?: string; CreatedAt: string; UpdatedAt: string
+}
 
 async function del(path: string): Promise<void> {
   const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
@@ -55,7 +62,11 @@ export const api = {
   createPolicy:  (p: Partial<BackupPolicy>) => post<BackupPolicy>('/v1/policies', p),
   deletePolicy:  (id: string) => del(`/v1/policies/${id}`),
   jobs:         () => get<BackupJob[]>('/v1/jobs'),
-  snapshots:    () => get<Snapshot[]>('/v1/snapshots'),
+  snapshots:      () => get<Snapshot[]>('/v1/snapshots'),
+  restoreTests:   () => get<RestoreTest[]>('/v1/restore-tests'),
+  createRestoreTest: (snapshotID: string, targetPath?: string) =>
+    post<RestoreTest>('/v1/restore-tests', { snapshot_id: snapshotID, target_path: targetPath }),
+  deleteRestoreTest: (id: string) => del(`/v1/restore-tests/${id}`),
   createJob:    (systemID: string, policyID: string) =>
     post<BackupJob>('/v1/jobs', { SystemID: systemID, PolicyID: policyID, Status: 'pending' }),
   createEnrollmentToken: (systemID: string) =>

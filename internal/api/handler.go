@@ -28,6 +28,7 @@ type Handler struct {
 	policies         catalog.PolicyStore
 	jobs             catalog.JobStore
 	snapshots        catalog.SnapshotStore
+	restoreTests     catalog.RestoreTestStore
 	enrollmentTokens auth.EnrollmentTokenStore
 	agentTokens      auth.AgentTokenStore
 	policyNotifier   PolicyChangeNotifier // may be nil
@@ -41,6 +42,7 @@ func New(
 	policies catalog.PolicyStore,
 	jobs catalog.JobStore,
 	snapshots catalog.SnapshotStore,
+	restoreTests catalog.RestoreTestStore,
 	enrollmentTokens auth.EnrollmentTokenStore,
 	agentTokens auth.AgentTokenStore,
 	log *slog.Logger,
@@ -51,6 +53,7 @@ func New(
 		policies:         policies,
 		jobs:             jobs,
 		snapshots:        snapshots,
+		restoreTests:     restoreTests,
 		enrollmentTokens: enrollmentTokens,
 		agentTokens:      agentTokens,
 		log:              log,
