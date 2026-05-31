@@ -1,4 +1,6 @@
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+// Empty string = relative URLs (same host/port) — works when UI is served by the control plane.
+// Set VITE_API_URL to override for dev (e.g. http://localhost:8080 when running vite dev server).
+const BASE = import.meta.env.VITE_API_URL || ''
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
