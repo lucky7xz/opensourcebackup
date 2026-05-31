@@ -179,11 +179,10 @@ ensure_go_122() {
 if ! curl -fsSL --head "$DOWNLOAD_URL" &>/dev/null; then
   warn "Binary release not found. Building from source..."
   ensure_go_122
-  cd /tmp
-  rm -rf osb-build
-  git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git osb-build
-  cd osb-build
-  go build -o "$SERVER_BIN" ./cmd/control-plane
+  rm -rf /tmp/osb-build
+  git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git /tmp/osb-build
+  cd /tmp/osb-build
+  /usr/local/go/bin/go build -o "$SERVER_BIN" ./cmd/control-plane || go build -o "$SERVER_BIN" ./cmd/control-plane
   cd /
   rm -rf /tmp/osb-build
 else
