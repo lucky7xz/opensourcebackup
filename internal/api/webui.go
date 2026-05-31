@@ -12,31 +12,34 @@ import (
 func (h *Handler) webUIDir() string {
 	dir := os.Getenv("WEB_UI_DIR")
 	if dir == "" {
-		// Default: web/dist relative to working directory
 		if _, err := os.Stat("web/dist/index.html"); err == nil {
 			return "web/dist"
 		}
-		return "" // not built yet — skip
+		return ""
 	}
 	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
-		return "" // directory doesn't have index.html
+		return ""
 	}
 	return dir
 }
 
 // spaHandler serves a Single Page Application (React).
-// Known static assets are served directly; everything else returns index.html
-// so React Router can handle client-side navigation.
+// Static assets (JS, CSS, images) are served directly.
+// All other paths return index.html so React Router handles navigation.
 func spaHandler(dir string) http.Handler {
 	fs := http.FileServer(http.Dir(dir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := filepath.Join(dir, filepath.Clean("/"+r.URL.Path))
-		// If the file exists → serve it
-		if _, err := os.Stat(path); err == nil && !strings.HasSuffix(path, "/") {
+		// Strip leading slash and use clean relative path to avoid
+		// filepath.Join dropping the dir prefix on absolute paths.
+		rel := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
+		full := filepath.Join(dir, rel)
+
+		if info, err := os.Stat(full); err == nil && !info.IsDir() {
+			// File exists → serve it directly (JS, CSS, assets, favicon)
 			fs.ServeHTTP(w, r)
 			return
 		}
-		// Otherwise → index.html (React Router takes over)
+		// Not a file → serve index.html for React Router
 		http.ServeFile(w, r, filepath.Join(dir, "index.html"))
 	})
 }
