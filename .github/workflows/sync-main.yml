@@ -1,11 +1,13 @@
 # Auto-sync: merge master → main after every push to master.
-# Keeps both branches identical without manual intervention.
 name: Sync main with master
 
 on:
   push:
     branches:
       - master
+
+permissions:
+  contents: write
 
 jobs:
   sync:
@@ -24,6 +26,7 @@ jobs:
 
       - name: Merge master into main
         run: |
+          git fetch origin
           git checkout main
           git merge origin/master --no-ff -m "chore: auto-sync main with master [skip ci]"
           git push origin main
