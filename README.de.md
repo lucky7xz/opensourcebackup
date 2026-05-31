@@ -54,6 +54,15 @@ RESTIC_REPO=s3:mein-bucket/backups \
 ./agent
 ```
 
+## Web-Dashboard
+
+```bash
+cd web && npm install && npm run dev
+# → http://localhost:5173
+```
+
+**Dashboard zeigt:** Geschützte Systeme, Job-Status, Restore-Verifikation, aktuelle Fehler.
+
 ## Entwicklung
 
 ```bash
@@ -65,6 +74,7 @@ make lint-warn         # Weich — informativ
 make check             # fmt + lint + test
 make run               # Control Plane starten
 make run-agent         # Backup-Agent starten
+make build-agent-all   # Agent-Binaries für alle Platforms bauen
 ```
 
 ## Dokumentation

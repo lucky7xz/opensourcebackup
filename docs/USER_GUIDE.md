@@ -1,229 +1,169 @@
 # User Guide — OpensourceBackup
 
-> Anleitung für den Betrieb und die Nutzung des OpensourceBackup Control Plane.
-> Stand: B1–B9.7 — REST API + Backup-Agent verfügbar.
+> Stand: B1–B16 — Control Plane, Agent, Web-Dashboard.
 
 ---
 
 ## Was ist OpensourceBackup?
 
-OpensourceBackup sichert Dateien, Ordner und Datenbanken auf deinen Servern und Clients.
-Es besteht aus zwei Teilen:
+OpensourceBackup sichert Dateien, Ordner und Datenbanken auf deinen Servern und Clients — zentral verwaltet, automatisch überwacht.
 
 ```
-Control Plane (läuft zentral)
-  → verwaltet Systeme, Policies, Jobs, Snapshots
-  → plant Backups (Cron-Scheduler)
-  → überwacht ob Backups wirklich laufen (Dead-Man's-Switch)
-
-Agent (läuft auf jedem Zielsystem)
-  → holt Jobs von der Control Plane
-  → führt restic backup aus
-  → meldet Ergebnis zurück
+Control Plane + Web-UI  → verwaltet Systeme, Policies, Jobs, Snapshots
+Agent (auf Zielsystem)  → führt restic backup aus, meldet zurück
 ```
 
-**Was du sichern kannst:**
-- Dateien & Ordner: `/home`, `/etc`, `/var/www`, `C:\Users\` → via Restic
-- PostgreSQL-Datenbanken → via pgBackRest
-- Komplette Systeme → via Restic
-- Kubernetes-Cluster → via Velero
+**Kern-Frage des Dashboards:** *Sind meine Systeme gesichert — und wurde ein Restore getestet?*
 
 ---
 
 ## Starten
 
-### Control Plane
-
 ```bash
-git clone https://github.com/cerberus8484/opensourcebackup.git
-cd opensourcebackup
+# 1. Control Plane + Datenbank
+make dev-up && make migrate-up && make run
 
-make dev-up        # PostgreSQL + Redis starten
-make migrate-up    # Datenbank einrichten
-make run           # → http://localhost:8080
+# 2. Web-UI
+cd web && npm install && npm run dev
+# → http://localhost:5173
 
-curl http://localhost:8080/health
-# → {"status":"ok"}
-```
-
-### Agent auf einem Zielsystem einrichten
-
-```bash
-# Schritt 1: System in der Control Plane anlegen
-curl -X POST http://localhost:8080/v1/systems \
-  -H "Content-Type: application/json" \
-  -d '{"Hostname": "mein-server", "RiskClass": "standard"}'
-# → {"ID": "uuid-des-systems", ...}
-
-# Schritt 2: Enrollment-Token erzeugen (gilt 30 Minuten)
-curl -X POST http://localhost:8080/v1/systems/{uuid-des-systems}/enrollment-token
-# → {"token": "Xk3mNp...", "expires_at": "..."}
-
-# Schritt 3: Agent starten — enrollt sich automatisch
-CONTROL_PLANE_URL=http://localhost:8080 \
-ENROLLMENT_TOKEN=Xk3mNp... \
-RESTIC_PASSWORD=geheimes-passwort \
-RESTIC_REPO=s3:mein-bucket/backups/mein-server \
-./agent
-
-# → Agent speichert Token in data/agent-token
-# → Agent pollt alle 30s nach Jobs
-```
-
-**Nach dem ersten Enrollment** genügt:
-```bash
-CONTROL_PLANE_URL=http://localhost:8080 \
-RESTIC_PASSWORD=geheimes-passwort \
-RESTIC_REPO=s3:mein-bucket/backups \
-./agent
-# → liest Token aus data/agent-token
+# 3. Gesundheit prüfen
+curl http://localhost:8080/health  # → {"status":"ok"}
 ```
 
 ---
 
-## API-Referenz
+## Erster Backup in 4 Schritten
 
-Base-URL: `http://localhost:8080`
+### Schritt 1 — System registrieren
+**Systems-Seite → (kommt in B_FORM)**  
+Aktuell per API:
+```powershell
+Invoke-WebRequest "http://localhost:8080/v1/systems" -Method POST `
+  -ContentType "application/json" `
+  -Body '{"Hostname":"mein-server","RiskClass":"standard"}' `
+  -UseBasicParsing
+```
+
+### Schritt 2 — Repository anlegen
+**Repositories-Seite** (Create-Formular kommt in B_FORM)
+```powershell
+Invoke-WebRequest "http://localhost:8080/v1/repositories" -Method POST `
+  -ContentType "application/json" `
+  -Body '{"Type":"restic","Location":"C:/tmp/backup-repo"}' `
+  -UseBasicParsing
+```
+
+### Schritt 3 — Policy erstellen
+**Policies-Seite → „+ New Policy"**
+
+| Feld | Beschreibung |
+|---|---|
+| Name | z.B. `nightly-documents` |
+| Engine | restic / borg / pgbackrest / velero |
+| Repository | Dropdown aus vorhandenen Repos |
+| Include Paths | Ordner zum Sichern, z.B. `C:/Users/Admin/Documents` |
+| Exclude Paths | Optional: `C:/Users/Admin/AppData` |
+| Schedule | Preset oder eigener Cron-Ausdruck |
+| Retention | Wie viele Snapshots behalten (Daily / Weekly / Monthly) |
+
+### Schritt 4 — Agent installieren
+**Agents-Seite → Install Agent Wizard**
+
+1. System aus Liste wählen
+2. Platform wählen (Windows / Linux)
+3. Repository-Pfad + Passwort eingeben
+4. Fertigen Installationsbefehl kopieren und auf Zielsystem ausführen
+
+Der Agent enrollt sich automatisch und startet den Backup-Zyklus.
 
 ---
 
-### Systeme `/v1/systems`
+## Web-UI Übersicht
 
-Ein System = ein zu sicherndes Gerät.
-
-```bash
-# Anlegen
-curl -X POST http://localhost:8080/v1/systems \
-  -H "Content-Type: application/json" \
-  -d '{"Hostname":"web-01","OS":"Ubuntu 22.04","RiskClass":"critical","Tags":{"env":"prod"}}'
-
-# Alle abrufen
-curl http://localhost:8080/v1/systems
-
-# Einzeln abrufen / aktualisieren / löschen
-curl http://localhost:8080/v1/systems/{id}
-curl -X PUT http://localhost:8080/v1/systems/{id} -d '...'
-curl -X DELETE http://localhost:8080/v1/systems/{id}
-```
-
-### Repositories `/v1/repositories`
-
-Ein Repository = Backup-Speicherziel (S3, MinIO, lokales Laufwerk).
-
-```bash
-curl -X POST http://localhost:8080/v1/repositories \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Type": "restic",
-    "Location": "s3:mein-bucket/backups/web-01",
-    "EncryptionMode": "aes256",
-    "ObjectLockEnabled": true
-  }'
-```
-
-| Feld | Pflicht | Beschreibung |
+| Seite | URL | Was du siehst |
 |---|---|---|
-| `Type` | ✅ | `restic`, `borg`, `pgbackrest`, `velero` |
-| `Location` | ✅ | Pfad oder URL |
-| `ObjectLockEnabled` | — | WORM-Schutz gegen Ransomware |
-
-### Policies `/v1/policies`
-
-Eine Policy = was wird wann wie gesichert, und wohin.
-
-```bash
-curl -X POST http://localhost:8080/v1/policies \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Name": "nightly-full",
-    "Engine": "restic",
-    "RepositoryID": "uuid-des-repositories",
-    "Includes": ["/home", "/etc"],
-    "Excludes": ["/home/*/.cache"],
-    "Schedule": "0 2 * * *",
-    "Retention": {"daily": 7, "weekly": 4, "monthly": 12}
-  }'
-```
-
-**Wichtig:** `RepositoryID` muss gesetzt sein, sonst schlägt der Backup-Job fehl.
-
-**Cron-Beispiele:**
-
-| Schedule | Bedeutung |
-|---|---|
-| `0 2 * * *` | Täglich 02:00 Uhr |
-| `0 2 * * 0` | Wöchentlich, Sonntags |
-| `0 */6 * * *` | Alle 6 Stunden |
-
-### Enrollment-Token `/v1/systems/{id}/enrollment-token`
-
-```bash
-# Einmaligen Token für einen Agent erzeugen (gilt 30 Minuten)
-curl -X POST http://localhost:8080/v1/systems/{id}/enrollment-token
-# → {"token": "...", "system_id": "...", "expires_at": "..."}
-```
+| Dashboard | `/` | Health-Cards, Restore-Status, Recent Jobs |
+| Systems | `/systems` | Alle Systeme, Last Backup, ▶ Run Backup |
+| Agents | `/agents` | Install-Wizard, Connected Systems, Remove |
+| Policies | `/policies` | Backup-Regeln, + New Policy, 🗑 Delete |
+| Jobs | `/jobs` | Jobs mit Filter, + New Job, 🗑 Delete (pending/failed) |
+| Snapshots | `/snapshots` | Alle Snapshots, Restore-Test-Status |
+| Restore Tests | `/restore-tests` | Kommt in B13/B14 |
+| Repositories | `/repositories` | Storage-Ziele |
 
 ---
 
-### Agent-Routen `/v1/agent/*`
+## Agent verwalten
 
-Diese Routen sind **nur für Agents** — immer mit Bearer-Token:
+### Agent herunterladen
+```powershell
+# Windows
+Invoke-WebRequest "http://localhost:8080/downloads/agent/v0.1.0/windows-amd64" `
+  -OutFile opensourcebackup-agent.exe
 
-```bash
-Authorization: Bearer <agent-token>
+# Linux
+curl -fsSL http://localhost:8080/downloads/agent/v0.1.0/linux-amd64 `
+  -o opensourcebackup-agent && chmod +x opensourcebackup-agent
 ```
 
-| Route | Beschreibung |
-|---|---|
-| `POST /v1/agent/enroll` | Enrollment-Token → Agent-Token tauschen |
-| `GET /v1/agent/jobs` | Pending Jobs für dieses System |
-| `PUT /v1/agent/jobs/{id}/start` | Job als "running" markieren |
-| `PUT /v1/agent/jobs/{id}/complete` | Backup erfolgreich, Snapshot registrieren |
-| `PUT /v1/agent/jobs/{id}/fail` | Backup fehlgeschlagen |
+### Agent starten (nach Enrollment)
+```powershell
+$env:CONTROL_PLANE_URL = "http://localhost:8080"
+$env:RESTIC_PASSWORD   = "<passwort>"
+$env:RESTIC_REPO       = "<pfad-oder-url>"
+.\opensourcebackup-agent.exe
+```
 
-Ein Agent sieht **nur** seine eigenen Jobs — nie Jobs anderer Systeme.
+### Agent stoppen
+```powershell
+Stop-Process -Name "opensourcebackup-agent" -Force
+```
+
+### Agent entfernen
+**Agents-Seite** oder **Systems-Seite** → 🗑 Remove → Bestätigung
+
+Der Agent stoppt beim nächsten Poll (max. 30s) mit 401.
 
 ---
 
-### Jobs `/v1/jobs`
+## Backup manuell auslösen
 
-```bash
-# Alle Jobs
-curl http://localhost:8080/v1/jobs
+**Jobs-Seite → „+ New Job"** → System + Policy wählen → Run Backup
 
-# Pending Jobs für ein System (wie der Agent es nutzt)
-curl "http://localhost:8080/v1/jobs?system_id={id}&status=pending"
-```
-
-**Job-Status:**
-
-| Status | Bedeutung |
-|---|---|
-| `pending` | Wartet auf Agent |
-| `running` | Agent führt Backup aus |
-| `success` | Erfolgreich |
-| `failed` | Fehlgeschlagen |
-
-### Snapshots `/v1/snapshots`
-
-```bash
-curl http://localhost:8080/v1/snapshots
-curl http://localhost:8080/v1/snapshots/{id}
-```
+Oder auf der **Systems-Seite** → ▶ Run Backup in der jeweiligen Zeile.
 
 ---
 
-## Scheduler & Monitoring
+## Policy-Pfade konfigurieren
 
-**Automatische Job-Erstellung:** Der Scheduler liest beim Start alle Policies mit Cron-Schedule
-und erstellt automatisch `pending`-Jobs zur richtigen Zeit.
+**Policies-Seite → „+ New Policy"**
 
-**Dead-Man's-Switch:** Alle 5 Minuten prüft der Scheduler ob alle Jobs termingerecht gelaufen sind.
-Wenn der letzte Job älter als `Intervall × 1.5` ist:
+Include-Pfade:
+```
+C:/Users/Admin/Documents
+C:/Users/Admin/Desktop
+C:/ProgramData/myapp
+```
 
+Exclude-Pfade (optional):
+```
+C:/Users/Admin/AppData
+C:/Users/Admin/Documents/temp
+```
+
+Nach dem Erstellen: Job manuell oder per Schedule auslösen.
+
+---
+
+## Scheduler
+
+Alle Policies mit einem Cron-Schedule werden beim Start der Control Plane geladen.
+**Neue Policy → Control Plane neu starten damit der Schedule aktiv wird.**
+
+**Dead-Man's-Switch:** Alle 5 Min prüft der Scheduler ob Jobs termingerecht liefen:
 ```json
-{"level":"WARN","msg":"dead-man: overdue job detected",
- "policy_name":"nightly-full","last_job_at":"2026-05-31T02:00:00Z"}
+{"level":"WARN","msg":"dead-man: overdue job detected","policy_name":"nightly"}
 ```
 
 ---
@@ -232,48 +172,18 @@ Wenn der letzte Job älter als `Intervall × 1.5` ist:
 
 | Code | Bedeutung |
 |---|---|
-| `200` | Erfolgreich |
-| `201` | Ressource angelegt |
-| `204` | Gelöscht |
-| `400` | Ungültige Eingabe |
-| `401` | Kein oder ungültiger Token |
-| `404` | Nicht gefunden (auch: falsches System bei Agent-Routen) |
-| `413` | Request Body > 1 MB |
-| `503` | DB nicht erreichbar oder Timeout |
-
----
-
-## Häufige Fragen
-
-**Agent meldet "re-enrollment required" — was tun?**
-Der Agent-Token wurde revoked oder ist ungültig. Neuen Enrollment-Token erstellen und
-Agent neu starten mit `ENROLLMENT_TOKEN=...`.
-
-**Backup schlägt fehl mit "policy has no repository configured"?**
-Policy hat keine `RepositoryID`. Policy aktualisieren:
-```bash
-curl -X PUT http://localhost:8080/v1/policies/{id} \
-  -d '{"...", "RepositoryID": "uuid-des-repositories"}'
-```
-
-**DB-Verbindung prüfen:**
-```bash
-curl http://localhost:8080/health
-# {"status":"ok"} → OK
-# HTTP 503        → DB nicht erreichbar
-```
-
-**Alles zurücksetzen:**
-```bash
-make migrate-down && make migrate-up
-```
+| 200 / 201 / 204 | OK / Angelegt / Gelöscht |
+| 400 | Ungültige Eingabe (z.B. fehlende Pflichtfelder) |
+| 401 | Kein oder ungültiger Bearer-Token |
+| 404 | Nicht gefunden |
+| 413 | Request Body > 1 MB |
+| 503 | DB nicht erreichbar oder Timeout |
 
 ---
 
 ## Sicherheitshinweise
 
-- Agent-Token liegt in `data/agent-token` mit Rechten `0600` — nur Owner lesbar
-- `RESTIC_PASSWORD` niemals in Logs ausgeben
-- `DATABASE_URL` enthält Credentials — niemals committen
-- Enrollment-Token gilt nur 30 Minuten und kann nur einmal verwendet werden
-- Control Plane setzt automatisch Security Headers auf jede Response
+- Agent-Token in `data/agent-token` mit Rechten `0600`
+- Enrollment-Token gilt nur 30 Minuten, nur einmal verwendbar
+- `RESTIC_PASSWORD` und `DATABASE_URL` nie in Logs ausgeben
+- System löschen → alle Tokens werden automatisch mitgelöscht (CASCADE)

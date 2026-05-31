@@ -1,20 +1,16 @@
 # Developer Guide
 
-> Verbindlicher Leitfaden für alle Entwickler am OpensourceBackup-Projekt.
-> Vollständige Regeln: [DEVELOPER_GUIDE.md](developer-guide/DEVELOPER_GUIDE.md)
+> Stand: B1–B16 — Control Plane, Agent, Web-UI, Auth, Downloads.
 
 ---
 
 ## Voraussetzungen
 
 ```bash
-go 1.22+
-docker 24+ / docker compose 2.20+
-git 2.40+
-restic                 # auf Zielsystemen für Agent-Betrieb
-golangci-lint v2       # make lint-install
-golang-migrate         # go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-goimports              # go install golang.org/x/tools/cmd/goimports@latest
+go 1.22+  ·  node 20+  ·  docker 24+  ·  git 2.40+  ·  restic
+golangci-lint v2  →  make lint-install
+golang-migrate    →  go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+goimports         →  go install golang.org/x/tools/cmd/goimports@latest
 ```
 
 ## Setup
@@ -23,156 +19,138 @@ goimports              # go install golang.org/x/tools/cmd/goimports@latest
 git clone https://github.com/cerberus8484/opensourcebackup.git
 cd opensourcebackup
 
-make deps          # go mod download
-make dev-up        # PostgreSQL + Redis (Docker)
-make migrate-up    # Schema 000001–000008
-make run           # → http://localhost:8080/health → {"status":"ok"}
+make deps && make dev-up && make migrate-up && make run
+# Control Plane → http://localhost:8080
+
+cd web && npm install && npm run dev
+# Web-UI → http://localhost:5173
 ```
 
 ## Projektstruktur
 
 ```
-opensourcebackup/
-├── cmd/
-│   ├── control-plane/main.go   # Server + Scheduler + Auth + Middleware
-│   └── agent/main.go           # Agent: Enrollment-Flow + Poll-Loop
-├── internal/
-│   ├── api/
-│   │   ├── handler.go          # Handler-Struct, DI, decode, ErrBodyTooLarge
-│   │   ├── middleware.go       # Recovery, SecurityHeaders, BodyLimit, Logging, Timeout
-│   │   ├── agent_auth.go       # AgentAuth-Middleware, SystemIDFromContext
-│   │   ├── enrollment.go       # POST /enrollment-token, POST /agent/enroll
-│   │   ├── agent_jobs.go       # GET/start/complete/fail /v1/agent/jobs/*
-│   │   ├── routes.go           # Routing: öffentlich + /v1/agent/* (geschützt)
-│   │   ├── systems.go          # CRUD /v1/systems
-│   │   ├── repositories.go     # CRUD /v1/repositories
-│   │   ├── policies.go         # CRUD /v1/policies
-│   │   ├── jobs.go             # CRUD /v1/jobs (inkl. ?system_id=&status=pending)
-│   │   └── snapshots.go        # CRD /v1/snapshots
-│   ├── auth/
-│   │   ├── token.go            # GenerateToken (256-bit), HashToken (SHA-256)
-│   │   ├── enrollment_store.go # OTP: Create, Consume, Revoke
-│   │   └── agent_token_store.go# Bearer: Create, ValidateAndTouch, Revoke
-│   ├── agent/
-│   │   ├── agent.go            # Poll-Loop, Job-Flow, 401→Abbruch
-│   │   ├── tokenfile.go        # SaveToken(0600), LoadToken
-│   │   ├── client/client.go    # HTTP-Client /v1/agent/* mit Bearer-Token
-│   │   └── restic/runner.go    # Restic-Wrapper: init, backup --json, parse
-│   ├── catalog/
-│   │   ├── models.go           # System, BackupRepository, BackupPolicy (mit RepositoryID),
-│   │   │                       # BackupJob, Snapshot
-│   │   ├── errors.go           # ErrNotFound, ErrConflict
-│   │   └── *.go                # 5 Store-Interfaces + pgx-Implementierungen
-│   └── scheduler/
-│       └── scheduler.go        # Cron-Dispatcher + Dead-Man's-Switch
-├── migrations/
-│   ├── 000001–000005           # systems, repositories, backup_policies, jobs, snapshots
-│   ├── 000006                  # repository_id in backup_policies
-│   ├── 000007                  # agent_enrollment_tokens
-│   └── 000008                  # agent_tokens
-├── .golangci.hard.yml          # Lint Schicht 1 — blockiert CI
-├── .golangci.warn.yml          # Lint Schicht 2 — informativ
-├── .github/workflows/ci.yml
-└── Makefile
+cmd/
+  control-plane/main.go    Server + Scheduler + Auth + Middleware
+  agent/main.go            Enrollment-Flow + Poll-Loop
+
+internal/
+  api/
+    downloads.go           GET /downloads/agent/{version}/{platform}
+    middleware.go          Recovery, CORS, SecurityHeaders, BodyLimit, Logging, Timeout
+    agent_auth.go          Bearer Token → system_id im Context
+    enrollment.go          Enrollment-Token + Enroll-Endpoint
+    agent_jobs.go          /v1/agent/jobs start/complete/fail
+    handler.go + routes.go
+    systems/repositories/policies/jobs/snapshots.go
+  auth/
+    token.go               GenerateToken (256-bit), HashToken (SHA-256)
+    enrollment_store.go    OTP: Create, Consume, Revoke
+    agent_token_store.go   Bearer: Create, ValidateAndTouch, Revoke
+  agent/
+    agent.go               Poll-Loop, Job-Flow, 401→Abbruch
+    tokenfile.go           SaveToken(0600), LoadToken
+    client/client.go       HTTP-Client /v1/agent/*
+    restic/runner.go       init + backup --json + parse
+  catalog/                 5 Store-Interfaces + pgx
+  scheduler/               Cron + Dead-Man's-Switch
+
+web/src/
+  pages/                   Dashboard, Systems, Agents, Policies, Jobs,
+                           Snapshots, RestoreTests, Repositories
+  components/              Sidebar, StatusBadge, Table, Modal, ConfirmDialog, Card
+
+migrations/                000001–000009
+dist/agent/                Pre-built Binaries (in .gitignore)
 ```
 
 ## Make-Targets
 
 ```bash
-make deps            # go mod download
-make test            # Unit-Tests
-make test-integration# Integration-Tests (DATABASE_URL nötig)
-make lint            # Schicht 1 — blockiert
-make lint-warn       # Schicht 2 — informativ
-make fmt             # gofmt + goimports
-make check           # fmt + lint + test
-make run             # Control Plane
-make run-agent       # Agent (CONTROL_PLANE_URL + Token nötig)
-make dev-up          # Docker Compose starten
-make dev-down        # Docker Compose stoppen
-make migrate-up      # Migrationen ausführen (inkl. 000006–000008)
-make migrate-down    # Migrationen rückgängig
-make lint-install    # golangci-lint v2 installieren
+make deps                  go mod download
+make test                  Unit-Tests
+make test-integration      Integration-Tests (DATABASE_URL)
+make lint                  Schicht 1 — blockiert
+make lint-warn             Schicht 2 — informativ
+make check                 fmt + lint + test
+make run                   Control Plane
+make run-agent             Agent
+make dev-up / dev-down     Docker Compose
+make migrate-up / down     Migrationen 000001–000009
+make build-agent-windows   Windows AMD64 Binary → dist/
+make build-agent-linux     Linux AMD64 Binary → dist/
+make build-agent-all       Alle Platforms
+make lint-install          golangci-lint v2
 ```
 
 ## Umgebungsvariablen
 
 ### Control Plane
-
 ```bash
 DATABASE_URL=postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
 LISTEN_ADDR=:8080
+CORS_ORIGIN=http://localhost:5173   # Web-UI Origin
 ```
 
-### Agent (eine Token-Option wählen)
-
+### Agent
 ```bash
 CONTROL_PLANE_URL=http://localhost:8080
-RESTIC_PASSWORD=geheimes-passwort
-RESTIC_REPO=s3:mein-bucket/backups/system-name
-RESTIC_BIN=restic              # optional, Default: restic im PATH
-AGENT_POLL_INTERVAL=30s        # optional, Default: 30s
+RESTIC_PASSWORD=<passwort>
+RESTIC_REPO=<pfad-oder-url>
 
-# Token-Priorität:
-AGENT_TOKEN=<token>            # 1. direkter Token
-AGENT_TOKEN_FILE=data/agent-token  # 2. Token aus Datei
-ENROLLMENT_TOKEN=<token>       # 3. Einmal-Token zum Enrollen
+# Token (eine Option):
+AGENT_TOKEN=<token>              # direkter Token
+AGENT_TOKEN_FILE=data/agent-token
+ENROLLMENT_TOKEN=<token>         # einmaliges Enrollen
 ```
 
-## Agent-Enrollment (einmalig)
+## Agent-Binary bauen
 
 ```bash
-# 1. Admin erzeugt Enrollment-Token für ein System
-curl -X POST http://localhost:8080/v1/systems/{system_id}/enrollment-token
-# → {"token": "Xk3mNp...", "expires_at": "...+30min"}
+# Alle Platforms:
+make build-agent-all
 
-# 2. Agent enrollt sich (token wird in data/agent-token gespeichert)
-CONTROL_PLANE_URL=http://localhost:8080 \
-ENROLLMENT_TOKEN=Xk3mNp... \
-RESTIC_PASSWORD=secret \
-RESTIC_REPO=s3:bucket/backups \
-make run-agent
+# Einzeln:
+make build-agent-windows   # → dist/agent/v0.1.0/opensourcebackup-agent-windows-amd64.exe
+make build-agent-linux     # → dist/agent/v0.1.0/opensourcebackup-agent-linux-amd64
 ```
 
-## Tests schreiben
+Binaries werden über `GET /downloads/agent/v0.1.0/{platform}` ausgeliefert.
 
-```go
-// Unit-Test — kein Build-Tag, kein Docker
-func TestAgent_FailsJob_WhenPolicyHasNoRepository(t *testing.T) { ... }
+## Web-UI
 
-// Integration-Test — Build-Tag + DATABASE_URL
-//go:build integration
-func TestEnrollmentTokenStore_Consume_RejectsExpired(t *testing.T) { ... }
+```bash
+cd web
+npm install
+npm run dev          # → http://localhost:5173
+npm run build        # → web/dist/ für Produktion
 ```
 
-## Test-Übersicht (~70 Tests)
+## Tests (~70+)
 
-| Paket | Typ | Inhalt |
+| Paket | Typ | Tests |
 |---|---|---|
-| `internal/auth` | Unit | GenerateToken, HashToken (5 Tests) |
-| `internal/auth` | Integration | Enrollment + Agent-Token Stores (7 Tests) |
-| `internal/api` | Unit | Handler, Middleware, AgentAuth (16+ Tests) |
-| `internal/agent` | Unit | Poll-Loop, 401-Handling, Transient-Error (4 Tests) |
-| `internal/catalog` | Integration | Alle 5 Stores, B12-Tests (50+ Tests) |
-| `internal/scheduler` | Unit | Scheduler Start (2 Tests) |
+| `internal/auth` | Unit + Integration | Token-Hashing, Enrollment, Agent-Token |
+| `internal/api` | Unit | Handler, Middleware, AgentAuth, Modal-Actions |
+| `internal/agent` | Unit | Poll, 401, transient errors |
+| `internal/catalog` | Integration | Alle 5 Stores + B12 |
+| `internal/scheduler` | Unit | Scheduler Start |
+
+## Migrationen
+
+| Nr | Inhalt |
+|---|---|
+| 000001–000005 | systems, repositories, backup_policies, backup_jobs, snapshots |
+| 000006 | repository_id in backup_policies |
+| 000007 | agent_enrollment_tokens |
+| 000008 | agent_tokens |
+| 000009 | CASCADE DELETE auf Token-Tabellen |
 
 ## Definition of Done
 
-- [ ] `go build ./...` — kein Fehler
+- [ ] `go build ./...` grün
 - [ ] `make lint` — 0 Issues
-- [ ] `make test` + `make test-integration` — alle grün
-- [ ] Tokens werden nie geloggt (Code-Review-Pflicht)
-- [ ] `CHANGELOG.md` aktualisiert (feat/fix)
-- [ ] Beide READMEs (EN + DE) synchron halten
-- [ ] Keine Credentials im Code
-
-## Coding-Regeln
-
-| Prinzip | Beispiel im Projekt |
-|---|---|
-| DIP | `ControlPlaneClient` Interface — Agent kennt keinen konkreten HTTP-Client |
-| SRP | `auth/token.go` — nur Token-Hashing, sonst nichts |
-| IOSP | `agent.go` orchestriert, `restic/runner.go` führt aus |
-| KISS | stdlib net/http, keine Router-Frameworks |
-| YAGNI | Keine DTOs bis sie wirklich gebraucht werden |
-| Security | Tokens nie loggen — `// Never log this` im Code |
+- [ ] `make test` + `make test-integration` grün
+- [ ] Tokens nie geloggt
+- [ ] `CHANGELOG.md` aktualisiert
+- [ ] Beide READMEs (EN + DE) synchron
+- [ ] `make build-agent-all` nach Agent-Änderungen

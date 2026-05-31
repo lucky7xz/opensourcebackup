@@ -54,17 +54,27 @@ RESTIC_REPO=s3:my-bucket/backups \
 ./agent
 ```
 
+## Web Dashboard
+
+```bash
+cd web && npm install && npm run dev
+# → http://localhost:5173
+```
+
+**Dashboard shows:** Protected systems, job status, restore verification status, recent failures.
+
 ## Development
 
 ```bash
-make deps           # Download dependencies
-make test           # Unit tests
+make deps              # Download dependencies
+make test              # Unit tests
 make test-integration  # Integration tests (requires PostgreSQL)
-make lint           # Hard lint (blocks on violation)
-make lint-warn      # Soft lint (informational)
-make check          # fmt + lint + test
-make run            # Start control plane
-make run-agent      # Start backup agent
+make lint              # Hard lint (blocks on violation)
+make lint-warn         # Soft lint (informational)
+make check             # fmt + lint + test
+make run               # Start control plane
+make run-agent         # Start backup agent
+make build-agent-all   # Build agent binaries for all platforms
 ```
 
 ## Documentation
@@ -83,19 +93,20 @@ make run-agent      # Start backup agent
 ```
 opensourcebackup/
 ├── cmd/
-│   └── control-plane/      # Control Plane entry point
+│   ├── control-plane/      # Control Plane: API + Scheduler + Auth + Downloads
+│   └── agent/              # Backup Agent: enrollment + poll + restic runner
 ├── internal/
-│   ├── api/                # HTTP REST API handlers + middleware
-│   ├── catalog/            # PostgreSQL data access layer
+│   ├── api/                # REST API, Middleware, AgentAuth, Downloads
+│   ├── auth/               # Token hashing, Enrollment Store, Agent Token Store
+│   ├── agent/              # Poll loop, Restic runner, TokenFile
+│   ├── catalog/            # PostgreSQL data access (5 stores)
 │   └── scheduler/          # Cron scheduler + dead-man's switch
-├── migrations/             # SQL migrations (golang-migrate)
+├── web/                    # React 18 + TypeScript + Vite dashboard
+│   └── src/pages/          # Dashboard, Systems, Agents, Policies, Jobs, Snapshots
+├── migrations/             # SQL 000001–000009
 ├── deployments/
 │   └── docker-compose/     # Local dev stack (PostgreSQL + Redis)
-└── docs/
-    ├── architecture/       # Architecture documentation
-    ├── developer-guide/    # Developer guide + clean code principles
-    ├── quality/            # Lint strategy
-    └── adr/                # Architecture Decision Records
+└── docs/                   # arc42, UML, Developer Guide, User Guide, ADRs
 ```
 
 ## Technology Stack
