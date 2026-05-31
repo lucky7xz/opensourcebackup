@@ -94,7 +94,7 @@ export function Dashboard() {
           <Card>
             <Table
               cols={[
-                { header:'Snapshot',   render:s=><span style={s.mono}>{s.EngineSnapshotID.slice(0,10)}…</span> },
+                { header:'Snapshot',   render:sn=><span style={s.mono}>{sn.EngineSnapshotID.slice(0,10)}…</span> },
                 { header:'Restore',    render:_=><StatusBadge status="not tested" />, width:'110px' },
                 { header:'Size',       render:s=>{ const j=jobs.find(j=>j.ID===s.JobID); return fmt(j?.BytesUploaded) }},
                 { header:'Created',    render:s=>timeAgo(s.CreatedAt) },

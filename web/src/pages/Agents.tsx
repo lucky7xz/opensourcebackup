@@ -188,7 +188,7 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
                 <div style={s.label}>Agent Name / Hostname</div>
                 <div style={{ display:'flex', gap:8 }}>
                   <input
-                    style={{ ...s.input, flex:1 }}
+                    style={{ ...s.newSysInput, flex:1 }}
                     placeholder="z.B. web-server-01 oder 192.168.1.10"
                     value={newHostname}
                     onChange={e => setNewHostname(e.target.value)}
@@ -263,7 +263,7 @@ AGENT_POLL_INTERVAL="${pollSec}s" \\
 
             <div style={s.section}>
               <label style={s.label}>Poll interval (seconds)</label>
-              <input style={{...s.input, width:100}} value={pollSec} onChange={e => setPollSec(e.target.value)} />
+              <input style={{...s.newSysInput, width:100}} value={pollSec} onChange={e => setPollSec(e.target.value)} />
               <div style={s.hint}>How often the agent checks for new backup jobs (default: 30s)</div>
             </div>
 
@@ -432,7 +432,7 @@ const s: Record<string, React.CSSProperties> = {
   emptyHint:    { background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:8, padding:'14px 16px', fontSize:13, color:'var(--text-muted)' },
   newSysToggle: { marginTop:12 },
   newSysBox:    { marginTop:8, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px' },
-  input:        { padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
+  newSysInput:  { padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
   platformGrid: { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:8 },
   platformCard: { padding:'20px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', textAlign:'center' as const, transition:'all 0.12s' },
   platformCardOn:{ borderColor:'var(--accent)', background:'var(--accent-dim)' },

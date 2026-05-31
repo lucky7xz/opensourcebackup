@@ -209,9 +209,9 @@ export function Systems() {
 
       {runFor && (
         <Modal title={`Run Backup — ${runFor.Hostname}`} onClose={() => setRunFor(null)}>
-          <div style={s.field}>
-            <label style={s.label}>Select Policy</label>
-            <select value={selPolicy} onChange={e => setSelPolicy(e.target.value)} style={s.select}>
+          <div style={s.rField}>
+            <label style={s.rLabel}>Select Policy</label>
+            <select value={selPolicy} onChange={e => setSelPolicy(e.target.value)} style={s.rSelect}>
               <option value="">— select policy —</option>
               {policies.map(p => (
                 <option key={p.ID} value={p.ID}>
@@ -220,9 +220,9 @@ export function Systems() {
               ))}
             </select>
           </div>
-          <div style={s.actions}>
-            <button onClick={() => setRunFor(null)} style={s.cancelBtn}>Cancel</button>
-            <button onClick={runBackup} disabled={creating || !selPolicy} style={s.submitBtn}>
+          <div style={s.rActions}>
+            <button onClick={() => setRunFor(null)} style={s.rCancelBtn}>Cancel</button>
+            <button onClick={runBackup} disabled={creating || !selPolicy} style={s.rSubmitBtn}>
               {creating ? 'Creating…' : '▶ Run Backup'}
             </button>
           </div>
@@ -253,10 +253,11 @@ const s: Record<string,React.CSSProperties> = {
   editBtn:   { padding:'4px 8px', borderRadius:5, background:'rgba(245,158,11,0.08)', color:'var(--warning)', border:'1px solid rgba(245,158,11,0.2)', fontSize:12, cursor:'pointer' },
   delBtn:    { padding:'4px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
   msgBox:    { background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.3)', borderRadius:6, padding:'8px 14px', fontSize:13, color:'var(--success)', marginBottom:12, cursor:'pointer' },
-  field:     { marginBottom:16 },
-  label:     { display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:6 },
-  select:    { width:'100%', padding:'8px 12px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, cursor:'pointer' },
-  actions:   { display:'flex', gap:8, justifyContent:'flex-end', marginTop:20, paddingTop:16, borderTop:'1px solid var(--border)' },
-  cancelBtn: { padding:'7px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
-  submitBtn: { padding:'7px 20px', borderRadius:6, background:'var(--success)', color:'#000', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' },
+  // Run backup modal
+  rField:    { marginBottom:16 },
+  rLabel:    { display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:6 },
+  rSelect:   { width:'100%', padding:'8px 12px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, cursor:'pointer' },
+  rActions:  { display:'flex', gap:8, justifyContent:'flex-end', marginTop:20, paddingTop:16, borderTop:'1px solid var(--border)' },
+  rCancelBtn:{ padding:'7px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
+  rSubmitBtn:{ padding:'7px 20px', borderRadius:6, background:'var(--success)', color:'#000', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' },
 }
