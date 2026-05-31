@@ -39,7 +39,7 @@ Prozessdokumentation und Rechtsgrundlagen durch den Betreiber erforderlich.
 | 1 | `unsafe-inline` in CSP (Vite/Fonts) | Self-hosted Fonts + CSP-Nonces |
 | 2 | Kein RBAC — nur globaler Admin | B_RBAC (nächste Iteration) |
 | 3 | Kein MFA | Optional TOTP |
-| 4 | Kein DB-Level Audit-Log-Schutz | PostgreSQL Row Security Policy |
+| ~~4~~ | ~~Kein DB-Level Audit-Log-Schutz~~ | ✅ Implementiert — Migration 000013, RLS |
 | 5 | TLS ist opt-in, nicht Pflicht | TLS-Enforcement-Flag |
 | 6 | GDPR-Purge löscht nur Katalogdaten | Dokumentierter manueller Prozess für Restic-Repo |
 
