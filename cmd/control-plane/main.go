@@ -165,9 +165,10 @@ func main() {
 
 	// Middleware chain (outer → inner):
 	//   Timeout → Logging → RateLimit → WebAuth → CSRF → SecurityHeaders → CORS → BodyLimit → Recovery
-	// Auth is enabled only when credentials are configured.
-	// Without credentials = dev mode, all requests pass as admin (no login needed).
-	authEnabled := adminPass != "" || adminEmail != ""
+	// Auth is enforced only when BOTH ADMIN_EMAIL and ADMIN_PASSWORD are set.
+	// ADMIN_PASSWORD alone = legacy single-password mode, no blocking of API calls.
+	// Neither set = dev mode, all requests pass as synthetic admin.
+	authEnabled := adminEmail != "" && adminPass != ""
 
 	httpHandler := api.Chain(mux,
 		api.Recovery(logger),
