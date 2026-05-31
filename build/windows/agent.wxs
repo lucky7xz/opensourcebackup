@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OpenSourceBackup Agent — WiX MSI Installer
+  Build: wix build agent.wxs -o opensourcebackup-agent-setup.msi
+  Requires: dotnet tool install --global wix
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package
+    Name="OpenSourceBackup Agent"
+    Manufacturer="OpenSourceBackup"
+    Version="!(bind.FileVersion.AgentExe)"
+    UpgradeCode="7F3A2B1C-4D5E-6F7A-8B9C-0D1E2F3A4B5C"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <!-- Auto-upgrade: remove previous version before installing new one -->
+    <MajorUpgrade DowngradeErrorMessage="Eine neuere Version ist bereits installiert." />
+
+    <!-- Embed all files into MSI -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ── Properties ─────────────────────────────────────────────── -->
+    <Property Id="ARPPRODUCTICON"     Value="AgentIcon" />
+    <Property Id="ARPHELPLINK"        Value="https://github.com/cerberus8484/opensourcebackup" />
+    <Property Id="ARPURLINFOABOUT"    Value="https://github.com/cerberus8484/opensourcebackup" />
+    <Property Id="ARPNOREPAIR"        Value="1" />
+
+    <!-- Install settings passed via msiexec /qn PROP=VALUE -->
+    <Property Id="CONTROL_PLANE_URL"  Value="" />
+    <Property Id="ENROLLMENT_TOKEN"   Value="" />
+    <Property Id="RESTIC_PASSWORD"    Value="" Secure="yes" />
+    <Property Id="RESTIC_REPO"        Value="C:\ProgramData\opensourcebackup\restic-repo" />
+    <Property Id="POLL_INTERVAL"      Value="30s" />
+
+    <!-- ── Directory structure ────────────────────────────────────── -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="OSBDataDir" Name="opensourcebackup">
+        <Directory Id="INSTALLFOLDER" Name="." />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ── Files ──────────────────────────────────────────────────── -->
+    <ComponentGroup Id="AgentComponents" Directory="INSTALLFOLDER">
+
+      <!-- Agent binary -->
+      <Component Id="AgentExeComponent" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+        <File Id="AgentExe"
+              Source="..\..\dist\agent\v0.1.0\opensourcebackup-agent-windows-amd64.exe"
+              Name="opensourcebackup-agent.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- Restic binary -->
+      <Component Id="ResticExeComponent" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
+        <File Id="ResticExe"
+              Source="..\..\dist\tools\restic.exe"
+              Name="restic.exe"
+              KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+
+    <!-- ── Features ───────────────────────────────────────────────── -->
+    <Feature Id="ProductFeature" Title="OpenSourceBackup Agent" Level="1">
+      <ComponentGroupRef Id="AgentComponents" />
+    </Feature>
+
+    <!-- ── UI ─────────────────────────────────────────────────────── -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <Icon Id="AgentIcon" SourceFile="icon.ico" />
+
+    <!-- ── Custom Actions ─────────────────────────────────────────── -->
+
+    <!-- Set machine env vars via PowerShell after install -->
+    <CustomAction Id="SetEnvVars" Execute="deferred" Impersonate="no"
+      ExeCommand="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe"
+      Return="check">
+      <CommandLine>-NonInteractive -NoProfile -Command "
+        [Environment]::SetEnvironmentVariable('CONTROL_PLANE_URL',  '[CONTROL_PLANE_URL]', 'Machine');
+        [Environment]::SetEnvironmentVariable('RESTIC_PASSWORD',    '[RESTIC_PASSWORD]',   'Machine');
+        [Environment]::SetEnvironmentVariable('RESTIC_REPO',        '[RESTIC_REPO]',        'Machine');
+        [Environment]::SetEnvironmentVariable('RESTIC_BIN',         'C:\ProgramData\opensourcebackup\restic.exe', 'Machine');
+        [Environment]::SetEnvironmentVariable('AGENT_POLL_INTERVAL','[POLL_INTERVAL]',     'Machine');
+        [Environment]::SetEnvironmentVariable('AGENT_TOKEN_FILE',   'C:\ProgramData\opensourcebackup\agent-token', 'Machine');
+        [Environment]::SetEnvironmentVariable('RESTORE_TEST_ROOT',  'C:\ProgramData\opensourcebackup\restore-tests', 'Machine');
+        [Environment]::SetEnvironmentVariable('ENROLLMENT_TOKEN',   '[ENROLLMENT_TOKEN]',  'Machine');
+      "
+      </CommandLine>
+    </CustomAction>
+
+    <!-- Install Windows Service -->
+    <CustomAction Id="InstallService" Execute="deferred" Impersonate="no"
+      ExeCommand="[INSTALLFOLDER]opensourcebackup-agent.exe install"
+      Return="check" />
+
+    <!-- Start service -->
+    <CustomAction Id="StartService" Execute="deferred" Impersonate="no"
+      ExeCommand="[INSTALLFOLDER]opensourcebackup-agent.exe start"
+      Return="ignore" />
+
+    <!-- Stop and uninstall service on remove -->
+    <CustomAction Id="UninstallService" Execute="deferred" Impersonate="no"
+      ExeCommand="[INSTALLFOLDER]opensourcebackup-agent.exe stop"
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetEnvVars"     After="InstallFiles">NOT Installed OR REINSTALL</Custom>
+      <Custom Action="InstallService" After="SetEnvVars">NOT Installed OR REINSTALL</Custom>
+      <Custom Action="StartService"   After="InstallService">NOT Installed OR REINSTALL</Custom>
+      <Custom Action="UninstallService" Before="RemoveFiles">REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>
