@@ -43,7 +43,13 @@ func main() {
 		restoreRoot = "data/restore-tests"
 	}
 
-	cp := agentclient.New(controlPlaneURL, token)
+	// AGENT_TLS_SKIP_VERIFY=true allows self-signed certificates — dev only.
+	skipTLS := os.Getenv("AGENT_TLS_SKIP_VERIFY") == "true"
+	if skipTLS {
+		logger.Warn("TLS verification disabled — only use for development with self-signed certificates")
+	}
+
+	cp := agentclient.New(controlPlaneURL, token, skipTLS)
 	a := agent.New(agent.Config{
 		PollInterval:    poll,
 		ResticBin:       os.Getenv("RESTIC_BIN"),

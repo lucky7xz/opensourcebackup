@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,12 +30,20 @@ type Client struct {
 }
 
 // New creates a Client pointing at baseURL with the given bearer token.
-func New(baseURL, token string) *Client {
+// If skipTLSVerify is true, self-signed certificates are accepted (dev only).
+func New(baseURL, token string, skipTLSVerify ...bool) *Client {
+	transport := http.DefaultTransport
+	if len(skipTLSVerify) > 0 && skipTLSVerify[0] {
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // dev-only, documented
+		}
+	}
 	return &Client{
 		baseURL: baseURL,
 		token:   token,
 		httpClient: &http.Client{
-			Timeout: defaultTimeout,
+			Timeout:   defaultTimeout,
+			Transport: transport,
 		},
 	}
 }

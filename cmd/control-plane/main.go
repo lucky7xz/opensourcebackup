@@ -67,7 +67,7 @@ func main() {
 		auth.NewEnrollmentTokenStore(db),
 		auth.NewAgentTokenStore(db),
 		logger,
-	).WithPolicyNotifier(sched) // sched implements PolicyChangeNotifier
+	).WithPolicyNotifier(sched)
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
@@ -100,10 +100,28 @@ func main() {
 		IdleTimeout:       serverIdleTimeout,
 	}
 
+	// TLS: wenn beide Dateien gesetzt sind → HTTPS, sonst HTTP (dev mode)
+	tlsCert := os.Getenv("TLS_CERT_FILE")
+	tlsKey := os.Getenv("TLS_KEY_FILE")
+	tlsEnabled := tlsCert != "" && tlsKey != ""
+
 	go func() {
-		logger.Info("control plane listening", "addr", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
+		if tlsEnabled {
+			logger.Info("control plane starting with HTTPS",
+				"addr", addr,
+				"cert", tlsCert,
+			)
+			if err := srv.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+			}
+		} else {
+			logger.Warn("control plane starting in HTTP dev mode — not for production",
+				"addr", addr,
+				"hint", "set TLS_CERT_FILE and TLS_KEY_FILE to enable HTTPS",
+			)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Error("server error", "error", err)
+			}
 		}
 	}()
 

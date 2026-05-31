@@ -1,4 +1,4 @@
-.PHONY: deps test test-integration fmt lint lint-warn check lint-install run \
+.PHONY: deps test test-integration fmt lint lint-warn check lint-install run run-https certs \
         migrate-up migrate-down migrate-status \
         dev-up dev-down
 
@@ -48,8 +48,20 @@ lint-install:
 run:
 	DATABASE_URL=$(DATABASE_URL) go run $(CONTROL_PLANE)
 
+run-https:
+	DATABASE_URL=$(DATABASE_URL) \
+	LISTEN_ADDR=:8443 \
+	TLS_CERT_FILE=certs/dev.crt \
+	TLS_KEY_FILE=certs/dev.key \
+	go run $(CONTROL_PLANE)
+
 run-agent:
 	go run $(AGENT)
+
+# ── TLS Dev Certificate ──────────────────────────────────────────────────────
+# Generates a self-signed certificate using Go stdlib — no openssl required.
+certs:
+	go run ./internal/tools/gencert/
 
 # ── Agent Release Builds ─────────────────────────────────────────────────────
 VERSION ?= v0.1.0
