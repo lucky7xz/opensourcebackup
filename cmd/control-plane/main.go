@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,6 +17,11 @@ import (
 	"github.com/cerberus8484/opensourcebackup/internal/metrics"
 	"github.com/cerberus8484/opensourcebackup/internal/scheduler"
 	"github.com/cerberus8484/opensourcebackup/internal/security"
+)
+
+const (
+	// Minimum password length for bootstrap admin.
+	minAdminPasswordLen = 10
 )
 
 const (
@@ -55,23 +61,53 @@ func main() {
 	// ── Audit store ──────────────────────────────────────────────────────────
 	auditStore := audit.NewPostgresStore(db.Pool())
 
-	// ── Web authentication ───────────────────────────────────────────────────
-	// ADMIN_PASSWORD is required in production.
-	// Set ADMIN_PASSWORD="" (empty) to disable auth for local dev only.
+	// ── RBAC — multi-user authentication ────────────────────────────────────
+	userStore := auth.NewUserStore(db.Pool())
+	sessions  := auth.NewRBACSessionManager()
+
+	// Bootstrap admin: if ADMIN_EMAIL + ADMIN_PASSWORD are set and no admin
+	// user exists yet, create one automatically on first startup.
+	adminEmail := os.Getenv("ADMIN_EMAIL")
+	adminPass  := os.Getenv("ADMIN_PASSWORD")
+	if adminEmail != "" && adminPass != "" {
+		if len(adminPass) < minAdminPasswordLen {
+			logger.Error("ADMIN_PASSWORD too short — minimum 10 characters")
+			os.Exit(1)
+		}
+		_, err := userStore.GetByEmail(ctx, adminEmail)
+		if errors.Is(err, auth.ErrUserNotFound) {
+			hash, err := auth.HashPassword(adminPass)
+			if err != nil {
+				logger.Error("failed to hash admin password", "error", err)
+				os.Exit(1)
+			}
+			if _, err := userStore.Create(ctx, adminEmail, string(hash), auth.RoleAdmin, "Admin"); err != nil {
+				logger.Error("failed to create bootstrap admin", "error", err)
+				os.Exit(1)
+			}
+			logger.Info("bootstrap admin created", "email", adminEmail)
+		} else if err == nil {
+			logger.Info("admin user already exists — skipping bootstrap", "email", adminEmail)
+		}
+	} else if adminPass != "" {
+		// Legacy single-password mode (no email set)
+		logger.Warn("ADMIN_EMAIL not set — using legacy single-password mode",
+			"hint", "set ADMIN_EMAIL to enable multi-user RBAC",
+		)
+	} else {
+		logger.Warn("ADMIN_PASSWORD not set — dashboard accessible without login (dev only)")
+	}
+
+	// Legacy single-password fallback (only when ADMIN_EMAIL is not set)
 	var webAuth *auth.WebAuthenticator
-	adminPass := os.Getenv("ADMIN_PASSWORD")
-	if adminPass != "" {
-		hash, err := auth.HashPassword(adminPass)
-		if err != nil {
-			logger.Error("failed to hash admin password", "error", err)
+	if adminPass != "" && adminEmail == "" {
+		hash, herr := auth.HashPassword(adminPass)
+		if herr != nil {
+			logger.Error("failed to hash admin password", "error", herr)
 			os.Exit(1)
 		}
 		webAuth = auth.NewWebAuthenticator(hash)
-		logger.Info("web authentication enabled")
-	} else {
-		logger.Warn("ADMIN_PASSWORD not set — dashboard is accessible without login",
-			"hint", "set ADMIN_PASSWORD=<your-password> for production use",
-		)
+		logger.Info("legacy single-password auth enabled (set ADMIN_EMAIL to upgrade to RBAC)")
 	}
 
 	// ── Scheduler ────────────────────────────────────────────────────────────
@@ -98,7 +134,7 @@ func main() {
 		auth.NewAgentTokenStore(db),
 		auditStore,
 		logger,
-	).WithPolicyNotifier(sched).WithWebAuth(webAuth)
+	).WithPolicyNotifier(sched).WithWebAuth(webAuth).WithRBAC(sessions, userStore)
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
@@ -132,8 +168,8 @@ func main() {
 		api.RequestBodyLimit(maxRequestBodyBytes),
 		api.CORS(corsOrigin),
 		api.SecurityHeadersCSP,
-		security.CSRFProtect,           // Double-Submit Cookie; exempt: /v1/agent/*, /auth/login
-		api.WebAuth(webAuth, auditStore),
+		security.CSRFProtect,
+		api.RBACMiddleware(sessions, auditStore), // replaces old WebAuth
 		security.RateLimit(globalLimiter),
 		api.Logging(logger),
 		api.Timeout(requestHandlerTimeout),
@@ -225,6 +261,7 @@ func main() {
 		logger.Error("shutdown error", "error", err)
 	}
 	globalLimiter.Stop()
+	sessions.Stop()
 	if webAuth != nil {
 		webAuth.Stop()
 	}

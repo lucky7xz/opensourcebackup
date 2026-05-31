@@ -32,8 +32,10 @@ type Handler struct {
 	restoreTests     catalog.RestoreTestStore
 	enrollmentTokens auth.EnrollmentTokenStore
 	agentTokens      auth.AgentTokenStore
-	policyNotifier   PolicyChangeNotifier   // may be nil
-	webAuth          *auth.WebAuthenticator // may be nil (auth disabled in dev)
+	policyNotifier   PolicyChangeNotifier         // may be nil
+	webAuth          *auth.WebAuthenticator       // legacy single-password (fallback)
+	sessions         *auth.RBACSessionManager     // multi-user sessions; nil = legacy mode
+	users            auth.UserStore               // nil = legacy single-password mode
 	auditStore       audit.Store
 	log              *slog.Logger
 }
@@ -69,10 +71,17 @@ func New(
 	}
 }
 
-// WithWebAuth enables web-dashboard authentication.
-// When wa is nil the dashboard is accessible without login (dev mode).
+// WithWebAuth enables legacy single-password authentication (fallback).
 func (h *Handler) WithWebAuth(wa *auth.WebAuthenticator) *Handler {
 	h.webAuth = wa
+	return h
+}
+
+// WithRBAC enables multi-user RBAC authentication.
+// When set, this takes precedence over the legacy WebAuth.
+func (h *Handler) WithRBAC(sessions *auth.RBACSessionManager, users auth.UserStore) *Handler {
+	h.sessions = sessions
+	h.users = users
 	return h
 }
 

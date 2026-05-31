@@ -12,13 +12,19 @@ import (
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
 
-	// ── Authentication (public — no session required) ──────────────────────
-	// Rate-limited separately: 5 attempts per minute per IP.
+	// ── Authentication ─────────────────────────────────────────────────────
 	authLimiter := security.NewIPRateLimiter(5.0/60, 5)
-	authRateMiddleware := security.RateLimit(authLimiter)
-	mux.Handle("POST /auth/login",  authRateMiddleware(http.HandlerFunc(h.handleLogin)))
-	mux.Handle("POST /auth/logout", http.HandlerFunc(h.handleLogout))
-	mux.Handle("GET /auth/status",  http.HandlerFunc(h.handleAuthStatus))
+	authRate    := security.RateLimit(authLimiter)
+	mux.Handle("POST /auth/login",  authRate(http.HandlerFunc(h.handleRBACLogin)))
+	mux.Handle("POST /auth/logout", http.HandlerFunc(h.handleRBACLogout))
+	mux.Handle("GET /auth/me",      http.HandlerFunc(h.handleAuthMe))
+	mux.Handle("GET /auth/status",  http.HandlerFunc(h.handleAuthStatus)) // backward compat
+
+	// ── User management — admin only ────────────────────────────────────────
+	mux.HandleFunc("GET /v1/users",               requireRoleFn(auth.RoleAdmin, h.handleListUsers))
+	mux.HandleFunc("POST /v1/users",              requireRoleFn(auth.RoleAdmin, h.handleCreateUser))
+	mux.HandleFunc("PUT /v1/users/{id}/role",     requireRoleFn(auth.RoleAdmin, h.handleUpdateUserRole))
+	mux.HandleFunc("DELETE /v1/users/{id}",       requireRoleFn(auth.RoleAdmin, h.handleDeleteUser))
 
 	// Agent binary downloads
 	mux.HandleFunc("GET /downloads/agent", h.listDownloads)
@@ -63,19 +69,19 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /v1/systems/{id}", h.updateSystem)
 	mux.HandleFunc("DELETE /v1/systems/{id}", h.deleteSystem)
 
-	mux.HandleFunc("GET /v1/repositories", h.listRepositories)
-	mux.HandleFunc("POST /v1/repositories", h.createRepository)
-	mux.HandleFunc("GET /v1/repositories/health", h.handleListRepositoryHealth)
-	mux.HandleFunc("GET /v1/repositories/{id}", h.getRepository)
+	mux.HandleFunc("GET /v1/repositories",             h.listRepositories)
+	mux.HandleFunc("POST /v1/repositories",            requireRoleFn(auth.RoleOperator, h.createRepository))
+	mux.HandleFunc("GET /v1/repositories/health",      h.handleListRepositoryHealth)
+	mux.HandleFunc("GET /v1/repositories/{id}",        h.getRepository)
 	mux.HandleFunc("GET /v1/repositories/{id}/health", h.handleRepositoryHealth)
-	mux.HandleFunc("PUT /v1/repositories/{id}", h.updateRepository)
-	mux.HandleFunc("DELETE /v1/repositories/{id}", h.deleteRepository)
+	mux.HandleFunc("PUT /v1/repositories/{id}",        requireRoleFn(auth.RoleAdmin, h.updateRepository))    // admin: immutable_mode
+	mux.HandleFunc("DELETE /v1/repositories/{id}",     requireRoleFn(auth.RoleAdmin, h.deleteRepository))
 
-	mux.HandleFunc("GET /v1/policies", h.listPolicies)
-	mux.HandleFunc("POST /v1/policies", h.createPolicy)
-	mux.HandleFunc("GET /v1/policies/{id}", h.getPolicy)
-	mux.HandleFunc("PUT /v1/policies/{id}", h.updatePolicy)
-	mux.HandleFunc("DELETE /v1/policies/{id}", h.deletePolicy)
+	mux.HandleFunc("GET /v1/policies",         h.listPolicies)
+	mux.HandleFunc("POST /v1/policies",        requireRoleFn(auth.RoleOperator, h.createPolicy))
+	mux.HandleFunc("GET /v1/policies/{id}",    h.getPolicy)
+	mux.HandleFunc("PUT /v1/policies/{id}",    requireRoleFn(auth.RoleOperator, h.updatePolicy))
+	mux.HandleFunc("DELETE /v1/policies/{id}", requireRoleFn(auth.RoleAdmin, h.deletePolicy))
 
 	mux.HandleFunc("GET /v1/jobs", h.listJobs)
 	mux.HandleFunc("POST /v1/jobs", h.createJob)
