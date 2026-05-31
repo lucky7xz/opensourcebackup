@@ -32,15 +32,24 @@ func RBACMiddleware(sessions *auth.RBACSessionManager, auditStore audit.Store) f
 				return
 			}
 
+			// The web UI itself is always accessible — auth happens client-side.
+			// Only /v1/ API calls are blocked without a session.
+			if strings.HasPrefix(p, "/ui/") || p == "/" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Extract + validate session
 			token := auth.TokenFromRequest(r)
 			session, err := sessions.Get(token)
 			if err != nil {
+				// API call without session → 401
 				if strings.HasPrefix(p, "/v1/") {
 					writeError(w, http.StatusUnauthorized, "authentication required")
 					return
 				}
-				http.Redirect(w, r, "/ui/", http.StatusFound)
+				// Unknown path without session — pass through (let handler decide)
+				next.ServeHTTP(w, r)
 				return
 			}
 
