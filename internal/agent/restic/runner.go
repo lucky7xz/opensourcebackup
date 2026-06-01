@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -232,12 +233,27 @@ func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResu
 	}
 
 	if err := cmd.Wait(); err != nil {
+		// Exit status 3: restic completed but some files could not be read
+		// (e.g. locked files on Windows, permission denied on system dirs).
+		// A snapshot WAS created — treat as partial success if we got a summary.
+		if isExitStatus(err, 3) && result != nil {
+			return result, nil
+		}
 		return nil, fmt.Errorf("restic backup: %w", err)
 	}
 	if result == nil {
 		return nil, fmt.Errorf("restic backup: no summary in output")
 	}
 	return result, nil
+}
+
+// isExitStatus returns true if err is an *exec.ExitError with the given exit code.
+func isExitStatus(err error, code int) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == code
+	}
+	return false
 }
 
 func (r *Runner) cmd(ctx context.Context, opts BackupOptions, args ...string) *exec.Cmd {
