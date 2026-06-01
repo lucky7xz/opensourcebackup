@@ -34,7 +34,7 @@ export function ActivityChart({ data, height = 140 }: Props) {
   }
 
   const w      = 100  // SVG viewBox width
-  const padB   = 18   // bottom padding for labels
+  const padB   = 4    // bottom padding (labels now outside SVG)
   const padT   = 6    // top padding
   const chartH = height - padB - padT
   const n      = data.length
@@ -90,16 +90,7 @@ export function ActivityChart({ data, height = 140 }: Props) {
                 <rect x={x} y={baseY} width={barW} height={fH}
                   fill={COLORS.failures} opacity={0.9} rx={0.4} />
               )}
-              {/* X-axis label */}
-              {i % labelEvery === 0 && (
-                <text
-                  x={x + barW / 2} y={height - 3}
-                  textAnchor="middle" fontSize={3}
-                  fill="rgba(255,255,255,0.35)"
-                >
-                  {d.hour}
-                </text>
-              )}
+              {/* No inline SVG labels — rendered as HTML below */}
             </g>
           )
         })}
@@ -108,6 +99,12 @@ export function ActivityChart({ data, height = 140 }: Props) {
         <line x1={0} y1={padT + chartH} x2={100} y2={padT + chartH}
           stroke="rgba(255,255,255,0.1)" strokeWidth={0.3} />
       </svg>
+      {/* X-axis labels — HTML for crisp rendering */}
+      <div style={{ display:'flex', justifyContent:'space-between', padding:'3px 0 0', overflow:'hidden' }}>
+        {data.filter((_, i) => i % labelEvery === 0).map((d, i) => (
+          <span key={i} style={{ fontSize:10, color:'rgba(255,255,255,0.6)', lineHeight:1 }}>{d.hour}</span>
+        ))}
+      </div>
     </div>
   )
 }
