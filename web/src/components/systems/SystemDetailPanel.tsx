@@ -251,7 +251,7 @@ function fmtDate(iso?: string): string {
 
 const s: Record<string, React.CSSProperties> = {
   panel: {
-    width: 340, minWidth: 320, maxWidth: 360,
+    width: 680, minWidth: 640, maxWidth: 720,
     borderLeft: '1px solid var(--border)',
     background: 'var(--bg-sidebar)',
     display: 'flex', flexDirection: 'column',
@@ -280,7 +280,7 @@ const s: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap', transition: 'all 0.12s',
   },
   tabActive: { color: 'var(--accent)', borderBottomColor: 'var(--accent)' },
-  body:     { flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 },
+  body:     { flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignContent: 'start' },
   card: {
     background: 'linear-gradient(180deg, rgba(21,28,46,0.95), rgba(10,15,27,0.95))',
     border: '1px solid rgba(148,163,184,0.1)',
