@@ -421,15 +421,6 @@ function KpiCard({ icon, label, value, sub, color, warn }: {
   )
 }
 
-function _StatRow({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color }}>{value}</span>
-    </div>
-  )
-}
-
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const s: Record<string, React.CSSProperties> = {
