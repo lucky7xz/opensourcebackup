@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, fmt, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth, type HealthScore, type ActivityBucket } from '../api'
+import { api, timeAgo, duration, type BackupJob, type RestoreTest, type Snapshot, type System, type BackupRepository, type RepositoryHealth, type HealthScore, type ActivityBucket } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
 import { DonutChart, DonutLegend } from '../components/DonutChart'
 import { ActivityChart, ActivityLegend } from '../components/ActivityChart'
@@ -421,7 +421,7 @@ function KpiCard({ icon, label, value, sub, color, warn }: {
   )
 }
 
-function StatRow({ label, value, color }: { label: string; value: string; color: string }) {
+function _StatRow({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
