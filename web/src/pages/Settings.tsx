@@ -86,6 +86,9 @@ export function Settings() {
         </div>
       </div>
 
+      {/* Notifications */}
+      <NotificationChannels />
+
       {/* About */}
       <div style={s.section}>
         <h2 style={s.sectionTitle}>About</h2>
@@ -132,6 +135,114 @@ export function Settings() {
           {saved ? '✓ Saved' : 'Save Settings'}
         </button>
       </div>
+    </div>
+  )
+}
+
+const BASE = import.meta.env.VITE_API_URL || ''
+function csrfToken() { const m = document.cookie.match(/osb_csrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : '' }
+
+interface NotifyChannel { id: string; name: string; type: string; target: string; enabled: boolean; min_severity: string }
+
+function NotificationChannels() {
+  const [channels, setChannels] = useState<NotifyChannel[]>([])
+  const [showAdd, setShowAdd]   = useState(false)
+  const [name,    setName]      = useState('')
+  const [type,    setType]      = useState('webhook')
+  const [target,  setTarget]    = useState('')
+  const [minSev,  setMinSev]    = useState('warning')
+  const [saving,  setSaving]    = useState(false)
+  const [tested,  setTested]    = useState<string|null>(null)
+
+  const load = () => fetch(`${BASE}/v1/notifications`).then(r => r.ok ? r.json() : []).then(setChannels).catch(()=>{})
+  useEffect(() => { load() }, [])
+
+  async function add() {
+    if (!name || !target) return
+    setSaving(true)
+    try {
+      await fetch(`${BASE}/v1/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+        body: JSON.stringify({ name, type, target, min_severity: minSev, enabled: true }),
+      })
+      setShowAdd(false); setName(''); setTarget(''); load()
+    } finally { setSaving(false) }
+  }
+
+  async function test(ch: NotifyChannel) {
+    setTested(null)
+    const r = await fetch(`${BASE}/v1/notifications/${ch.id}/test`, {
+      method: 'POST', headers: { 'X-CSRF-Token': csrfToken() }
+    })
+    setTested(r.ok ? '✓ Test sent' : '✗ Failed')
+    setTimeout(() => setTested(null), 3000)
+  }
+
+  async function del(id: string) {
+    await fetch(`${BASE}/v1/notifications/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken() } })
+    load()
+  }
+
+  return (
+    <div style={s.section}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+        <h2 style={s.sectionTitle}>Notifications</h2>
+        <button onClick={() => setShowAdd(v=>!v)} style={s.resetBtn}>+ Add Channel</button>
+      </div>
+      <div style={{ fontSize:12, color:'var(--text-muted)', marginBottom:12 }}>
+        Send alerts via Webhook (Slack, Teams, Discord, custom) or Email when backup health drops.
+      </div>
+
+      {channels.length === 0 && !showAdd && (
+        <div style={{ fontSize:12, color:'var(--text-dim)', fontStyle:'italic' }}>No notification channels configured.</div>
+      )}
+
+      {channels.map(ch => (
+        <div key={ch.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+          <span style={{ fontSize:16 }}>{ch.type === 'webhook' ? '🔗' : '✉️'}</span>
+          <span style={{ flex:1, fontSize:13, color:'var(--text)', fontWeight:600 }}>{ch.name}</span>
+          <span style={{ fontSize:11, color:'var(--text-dim)' }}>{ch.min_severity}+</span>
+          <button onClick={() => test(ch)} style={{ ...s.resetBtn, fontSize:11, padding:'3px 10px' }}>Test</button>
+          <button onClick={() => del(ch.id)} style={{ ...s.resetBtn, fontSize:11, padding:'3px 8px', color:'var(--error)' }}>✕</button>
+        </div>
+      ))}
+
+      {tested && <div style={{ fontSize:12, color:'var(--success)', marginTop:8 }}>{tested}</div>}
+
+      {showAdd && (
+        <div style={{ marginTop:16, display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <div>
+              <label style={s.label}>Name</label>
+              <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="Slack Backup Alerts" />
+            </div>
+            <div>
+              <label style={s.label}>Type</label>
+              <select style={s.input} value={type} onChange={e=>setType(e.target.value)}>
+                <option value="webhook">Webhook (Slack / Teams / Discord)</option>
+                <option value="email">Email (coming soon)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={s.label}>Webhook URL</label>
+            <input style={s.input} value={target} onChange={e=>setTarget(e.target.value)} placeholder="https://hooks.slack.com/services/..." />
+          </div>
+          <div>
+            <label style={s.label}>Minimum Severity</label>
+            <select style={{...s.input, width:200}} value={minSev} onChange={e=>setMinSev(e.target.value)}>
+              <option value="info">Info (all alerts)</option>
+              <option value="warning">Warning + Critical</option>
+              <option value="critical">Critical only</option>
+            </select>
+          </div>
+          <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+            <button onClick={() => setShowAdd(false)} style={s.resetBtn}>Cancel</button>
+            <button onClick={add} disabled={saving} style={s.saveBtn}>{saving ? 'Saving…' : 'Add Channel'}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

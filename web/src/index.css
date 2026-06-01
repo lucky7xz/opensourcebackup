@@ -1,3 +1,28 @@
+/* ── Light mode ─────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:           #f0f4f8;
+  --bg-sidebar:   #e8edf4;
+  --bg-card:      #ffffff;
+  --bg-card-soft: #f5f7fa;
+  --bg-hover:     #e2e8f0;
+  --bg-topbar:    #f8fafc;
+  --border:       #d1d9e0;
+  --border-soft:  #c4cdd6;
+  --border-light: #b8c3ce;
+  --text:         #1a202c;
+  --text-muted:   #4a5568;
+  --text-dim:     #718096;
+  --success:  #16a34a;
+  --warning:  #d97706;
+  --error:    #dc2626;
+  --running:  #2563eb;
+  --accent:       #5a9e00;
+  --accent-dim:   rgba(90,158,0,0.12);
+  --accent-blue:  #2563eb;
+  --accent-teal:  #0d9488;
+}
+
+/* ── Dark mode (default) ─────────────────────────────────────────────────────── */
 :root {
   /* Backgrounds */
   --bg:           #070b12;
