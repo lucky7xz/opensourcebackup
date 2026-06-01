@@ -137,7 +137,7 @@ func main() {
 		auth.NewAgentTokenStore(db),
 		auditStore,
 		logger,
-	).WithPolicyNotifier(sched).WithWebAuth(webAuth).WithRBAC(sessions, userStore)
+	).WithPolicyNotifier(sched).WithWebAuth(webAuth).WithRBAC(sessions, userStore).WithDBPool(db.Pool())
 
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)

@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/auth"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
@@ -37,6 +39,7 @@ type Handler struct {
 	sessions         *auth.RBACSessionManager     // multi-user sessions; nil = legacy mode
 	users            auth.UserStore               // nil = legacy single-password mode
 	auditStore       audit.Store
+	dbPool           *pgxpool.Pool                // for direct DB operations (notifications etc.)
 	log              *slog.Logger
 }
 
@@ -74,6 +77,12 @@ func New(
 // WithWebAuth enables legacy single-password authentication (fallback).
 func (h *Handler) WithWebAuth(wa *auth.WebAuthenticator) *Handler {
 	h.webAuth = wa
+	return h
+}
+
+// WithDBPool stores the raw pool for direct DB operations.
+func (h *Handler) WithDBPool(pool *pgxpool.Pool) *Handler {
+	h.dbPool = pool
 	return h
 }
 

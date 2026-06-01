@@ -13,6 +13,7 @@ import (
 	agentclient "github.com/cerberus8484/opensourcebackup/internal/agent/client"
 	"github.com/cerberus8484/opensourcebackup/internal/agent/restic"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+
 )
 
 // ControlPlaneClient is the interface the agent uses to talk to the control plane.
@@ -112,7 +113,14 @@ func (a *Agent) poll(ctx context.Context) error {
 		return nil
 	}
 	for _, job := range jobs {
-		a.executeJob(ctx, job)
+		switch job.Type {
+		case catalog.JobTypeRetention:
+			// Retention jobs are handled by the retention pipeline
+		case "verify":
+			a.executeVerifyJob(ctx, job)
+		default:
+			a.executeJob(ctx, job)
+		}
 	}
 
 	// Poll restore tests
@@ -120,6 +128,49 @@ func (a *Agent) poll(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// executeVerifyJob runs restic check for a verify job.
+func (a *Agent) executeVerifyJob(ctx context.Context, job catalog.BackupJob) {
+	log := a.log.With("job_id", job.ID, "policy_id", job.PolicyID)
+	log.Info("verify job started")
+
+	policy, err := a.cp.GetPolicy(ctx, job.PolicyID)
+	if err != nil {
+		log.Error("get policy failed", "error", err)
+		a.doFail(ctx, log, job.ID, fmt.Sprintf("get policy: %s", err))
+		return
+	}
+
+	repo, err := a.cp.GetRepository(ctx, *policy.RepositoryID)
+	if err != nil {
+		log.Error("get repository failed", "error", err)
+		a.doFail(ctx, log, job.ID, fmt.Sprintf("get repository: %s", err))
+		return
+	}
+
+	if err := a.cp.StartJob(ctx, job.ID); err != nil {
+		log.Error("start job failed", "error", err)
+		return
+	}
+
+	err = a.runner.Verify(ctx, restic.VerifyOptions{
+		Repo:     repo.Location,
+		Password: a.cfg.ResticPassword,
+		ReadData: false, // fast check by default
+	})
+	if err != nil {
+		log.Error("verify failed", "error", err)
+		a.doFail(ctx, log, job.ID, err.Error())
+		return
+	}
+
+	// Complete with zero bytes (verify doesn't transfer data)
+	if err := a.cp.CompleteJob(ctx, job.ID, "", 0, nil); err != nil {
+		log.Error("complete verify job failed", "error", err)
+		return
+	}
+	log.Info("verify job completed")
 }
 
 func (a *Agent) executeNextRestoreTest(ctx context.Context) error {
