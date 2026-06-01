@@ -221,11 +221,11 @@ UNC-Pfad statt Laufwerksbuchstabe verwenden:
 ```powershell
 # Z: auflösen
 net use Z:
-# → \\192.168.0.32\Public
+# → \\192.168.1.50\Public
 
 # Repository mit UNC-Pfad konfigurieren
-[Environment]::SetEnvironmentVariable("RESTIC_REPO", "\\192.168.0.32\Public\OpenSourceBackup", "Machine")
-$env:RESTIC_REPO = "\\192.168.0.32\Public\OpenSourceBackup"
+[Environment]::SetEnvironmentVariable("RESTIC_REPO", "\\192.168.1.50\Public\OpenSourceBackup", "Machine")
+$env:RESTIC_REPO = "\\192.168.1.50\Public\OpenSourceBackup"
 
 # Dienst neu installieren (damit neuer Pfad eingebettet wird)
 & "C:\ProgramData\opensourcebackup\opensourcebackup-agent.exe" uninstall
