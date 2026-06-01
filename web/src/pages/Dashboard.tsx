@@ -209,7 +209,7 @@ const s: Record<string, React.CSSProperties> = {
   cardHeader:{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'13px 18px 10px', borderBottom:'1px solid var(--border)' },
   cardTitle: { fontSize:13, fontWeight:700 },
   timeBadge: { fontSize:10, padding:'3px 8px', borderRadius:5, background:'var(--bg-card-soft)', color:'var(--text-muted)', border:'1px solid var(--border)', fontWeight:600 },
-  actStats:  { display:'flex', gap:20, padding:'8px 18px 14px', fontSize:11, color:'var(--text-muted)', alignItems:'center' },
+  actStats:  { display:'flex', gap:20, padding:'10px 18px 14px', fontSize:12, color:'var(--text)', alignItems:'center', borderTop:'1px solid var(--border)', marginTop:4 },
   rangeBtn:  { padding:'3px 8px', borderRadius:5, background:'var(--bg-card-soft)', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:10, fontWeight:700, cursor:'pointer' },
   rangeBtnOn:{ background:'var(--accent-dim)', borderColor:'var(--accent)', color:'var(--accent)' },
   actEmpty:  { padding:'28px 20px', fontSize:12, color:'var(--text-dim)', textAlign:'center' as const, fontStyle:'italic' },
