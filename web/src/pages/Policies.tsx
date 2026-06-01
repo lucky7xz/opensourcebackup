@@ -57,6 +57,9 @@ export function Policies() {
   const [includes, setIncludes] = useState<string[]>([''])
   const [excludes, setExcludes] = useState<string[]>([])
   const [schedule, setSchedule] = useState<ScheduleConfig>({ ...EMPTY_SCHEDULE })
+  // advanced
+  const [bandwidthKbps, setBandwidthKbps] = useState('0')
+
   // retention
   const [keepLast,    setKeepLast]    = useState('7')
   const [keepDaily,   setKeepDaily]   = useState('14')
@@ -95,6 +98,7 @@ export function Policies() {
       restore_test_cron: p.ScheduleConfig?.restore_test_cron ?? '',
       retention_cron:    p.ScheduleConfig?.retention_cron    ?? '',
     })
+    setBandwidthKbps(String(p.Advanced?.BandwidthLimitKbps ?? 0))
     setKeepLast(String(p.RetentionPlan?.KeepLast    ?? 7))
     setKeepDaily(String(p.RetentionPlan?.KeepDaily   ?? 14))
     setKeepWeekly(String(p.RetentionPlan?.KeepWeekly ?? 8))
@@ -115,6 +119,7 @@ export function Policies() {
         RepositoryID: repoID || undefined,
         Schedule:     schedule.cron || undefined,
         ScheduleConfig: schedule,
+        Advanced: { BandwidthLimitKbps: Number(bandwidthKbps) || 0 },
         Includes:     cleanIncludes,
         Excludes:     excludes.map(p => p.trim()).filter(Boolean),
         RetentionPlan: {
@@ -267,6 +272,19 @@ export function Policies() {
                     </div>
                   ))}
                   <button onClick={() => setIncludes(prev => [...prev, ''])} style={s.addBtn}>+ Add path</button>
+                </div>
+
+                {/* Bandwidth throttling */}
+                <div style={s.field}>
+                  <label style={s.label}>Bandwidth Limit <span style={s.opt}>(optional)</span></label>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <input style={{...s.input, width:100}} type="number" min="0" value={bandwidthKbps}
+                      onChange={e => setBandwidthKbps(e.target.value)} />
+                    <span style={{ fontSize:12, color:'var(--text-muted)' }}>KB/s upload (0 = unlimited)</span>
+                  </div>
+                  <div style={{ fontSize:11, color:'var(--text-dim)', marginTop:4 }}>
+                    Limits backup upload speed. Useful for backups running during business hours.
+                  </div>
                 </div>
 
                 {/* Exclude paths */}

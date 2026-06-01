@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
@@ -158,8 +160,42 @@ func (s *Scheduler) reload(ctx context.Context) error {
 
 // ── Dispatch functions ─────────────────────────────────────────────────────────
 
+// inBackupWindow returns true if the current time is within the allowed backup window.
+// If no window is configured (empty strings), always returns true.
+func inBackupWindow(cfg catalog.ScheduleConfig, loc *time.Location) bool {
+	if cfg.WindowStart == "" || cfg.WindowEnd == "" {
+		return true
+	}
+	now := time.Now().In(loc)
+	nowMin := now.Hour()*60 + now.Minute()
+
+	parseHHMM := func(s string) int {
+		var h, m int
+		fmt.Sscanf(s, "%d:%d", &h, &m)
+		return h*60 + m
+	}
+	start := parseHHMM(cfg.WindowStart)
+	end   := parseHHMM(cfg.WindowEnd)
+
+	if start <= end {
+		return nowMin >= start && nowMin < end
+	}
+	// Window spans midnight (e.g. 22:00–06:00)
+	return nowMin >= start || nowMin < end
+}
+
 // dispatchBackup creates a pending BackupJob for all systems that recently ran this policy.
 func (s *Scheduler) dispatchBackup(ctx context.Context, p catalog.BackupPolicy) {
+	// Check backup window — skip if outside allowed hours
+	loc := locationFor(p.ScheduleConfig.Timezone)
+	if !inBackupWindow(p.ScheduleConfig, loc) {
+		s.log.Info("backup dispatch: outside backup window — skipping",
+			"policy", p.Name,
+			"window", p.ScheduleConfig.WindowStart+"–"+p.ScheduleConfig.WindowEnd,
+		)
+		return
+	}
+
 	systems, err := s.systemsForPolicy(ctx, p.ID)
 	if err != nil || len(systems) == 0 {
 		s.log.Warn("backup dispatch: no systems found for policy",

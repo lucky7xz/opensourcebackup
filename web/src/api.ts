@@ -95,10 +95,13 @@ export interface RetentionPlan {
   KeepMonthly: number; KeepYearly: number
 }
 
+export interface AdvancedConfig { BandwidthLimitKbps: number }
+
 export interface BackupPolicy {
   ID: string; Name: string; Engine: string; Schedule?: string
   ScheduleConfig?: ScheduleConfig
   RetentionPlan?: RetentionPlan
+  Advanced?: AdvancedConfig
   Includes?: string[]; Excludes?: string[]; RepositoryID?: string; CreatedAt: string
 }
 export interface BackupJob {
