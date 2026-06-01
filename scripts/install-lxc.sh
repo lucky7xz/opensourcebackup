@@ -206,13 +206,21 @@ pct exec "$CT_ID" -- bash -c "
     > /etc/apt/sources.list.d/docker.list
   apt-get update -qq
   apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
-  systemctl enable --now docker
+  systemctl enable docker
+  systemctl start docker
+
+  # Warten bis Docker-Daemon bereit ist
+  for i in \$(seq 1 30); do
+    docker info &>/dev/null 2>&1 && break
+    sleep 2
+  done
+  docker info &>/dev/null || { echo 'Docker daemon not ready'; exit 1; }
 
   # System-User für Service
   id osb &>/dev/null || useradd --system --home-dir /opt/opensourcebackup --shell /usr/sbin/nologin osb
 
   # Verzeichnisse
-  mkdir -p /opt/opensourcebackup /var/lib/opensourcebackup/postgres /var/lib/opensourcebackup/certs /etc/opensourcebackup
+  mkdir -p /opt/opensourcebackup /var/lib/opensourcebackup/certs /etc/opensourcebackup
 
   # DB-Passwort generieren (einmalig)
   CREDS_DIR=/etc/opensourcebackup
@@ -220,9 +228,9 @@ pct exec "$CT_ID" -- bash -c "
     openssl rand -hex 32 > \"\$CREDS_DIR/.db_password\"
     chmod 600 \"\$CREDS_DIR/.db_password\"
   fi
-  DB_PASSWORD=\$(cat \"\$CREDS_DIR/.db_password\")
+  DB_PASS=\$(cat \"\$CREDS_DIR/.db_password\")
 
-  # docker-compose.yml — Named Volume für PostgreSQL (kein Permissions-Problem)
+  # docker-compose.yml mit Named Volumes (keine Permissions-Probleme)
   cat > /opt/opensourcebackup/docker-compose.yml << DCEOF
 services:
   postgres:
@@ -230,14 +238,14 @@ services:
     restart: always
     environment:
       POSTGRES_USER: opensourcebackup
-      POSTGRES_PASSWORD: \${DB_PASSWORD}
+      POSTGRES_PASSWORD: \${DB_PASS}
       POSTGRES_DB: opensourcebackup
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - '127.0.0.1:5432:5432'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opensourcebackup"]
+      test: [\"CMD-SHELL\", \"pg_isready -U opensourcebackup\"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -248,26 +256,35 @@ services:
       - '127.0.0.1:6379:6379'
     volumes:
       - redisdata:/data
-
 volumes:
   pgdata:
   redisdata:
 DCEOF
 
-  # Container starten — Docker verwaltet Permissions selbst (named volumes)
-  docker compose -f /opt/opensourcebackup/docker-compose.yml up -d
+  # .env Datei für docker-compose (damit Variable verfügbar ist)
+  echo \"DB_PASS=\${DB_PASS}\" > /opt/opensourcebackup/.env
+  chmod 600 /opt/opensourcebackup/.env
 
+  # Container starten
+  docker compose -f /opt/opensourcebackup/docker-compose.yml up -d
   echo 'DOCKER_OK'
 "
 ok "Docker + PostgreSQL + Redis gestartet"
 
-# PostgreSQL warten
-info "Warte auf PostgreSQL (Permissions werden gesetzt)..."
-for i in {1..40}; do
+# PostgreSQL warten — von außen prüfen
+info "Warte auf PostgreSQL..."
+for i in {1..50}; do
   pct exec "$CT_ID" -- docker exec opensourcebackup-postgres-1 \
     pg_isready -U opensourcebackup &>/dev/null 2>&1 && break || { echo -n "."; sleep 3; }
 done
 echo ""
+
+# Prüfen ob PostgreSQL wirklich läuft
+if ! pct exec "$CT_ID" -- docker exec opensourcebackup-postgres-1 pg_isready -U opensourcebackup &>/dev/null 2>&1; then
+  warn "PostgreSQL antwortet nicht — Container-Logs:"
+  pct exec "$CT_ID" -- docker logs opensourcebackup-postgres-1 2>&1 | tail -10
+  die "PostgreSQL konnte nicht gestartet werden"
+fi
 ok "PostgreSQL bereit"
 
 # ── Server-Binary + Web UI ────────────────────────────────────────────────────
