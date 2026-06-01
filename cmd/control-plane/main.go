@@ -115,6 +115,9 @@ func main() {
 		catalog.NewPolicyStore(db),
 		catalog.NewJobStore(db),
 		logger,
+	).WithStores(
+		catalog.NewSnapshotStore(db),
+		catalog.NewRestoreTestStore(db),
 	)
 	go func() {
 		if err := sched.Start(ctx); err != nil {
