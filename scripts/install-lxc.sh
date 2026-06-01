@@ -248,23 +248,27 @@ services:
       - '127.0.0.1:6379:6379'
 DCEOF
 
-  # PostgreSQL-Daten: Berechtigungen setzen (vor UND nach Docker-Start)
-  chown -R 999:999 /var/lib/opensourcebackup/postgres
-
-  # Container starten
+  # Schritt 1: Container starten damit PostgreSQL das Datenverzeichnis initialisiert
   docker compose -f /opt/opensourcebackup/docker-compose.yml up -d
 
-  # Nochmal chown — Docker kann Verzeichnis neu anlegen und Permissions überschreiben
-  sleep 2
+  # Schritt 2: Warten bis PostgreSQL das Verzeichnis angelegt hat (ca. 5s)
+  sleep 8
+
+  # Schritt 3: PostgreSQL stoppen
+  docker stop opensourcebackup-postgres-1 2>/dev/null || true
+
+  # Schritt 4: Permissions korrigieren (NACH Initialisierung — das ist entscheidend)
   chown -R 999:999 /var/lib/opensourcebackup/postgres
+
+  # Schritt 5: PostgreSQL neu starten mit korrekten Permissions
+  docker start opensourcebackup-postgres-1
 
   echo 'DOCKER_OK'
 "
-pct exec "$CT_ID" -- bash -c "grep -q DOCKER_OK /proc/\$\$/fd/1 2>/dev/null; true"
 ok "Docker + PostgreSQL + Redis gestartet"
 
 # PostgreSQL warten
-info "Warte auf PostgreSQL..."
+info "Warte auf PostgreSQL (Permissions werden gesetzt)..."
 for i in {1..40}; do
   pct exec "$CT_ID" -- docker exec opensourcebackup-postgres-1 \
     pg_isready -U opensourcebackup &>/dev/null 2>&1 && break || { echo -n "."; sleep 3; }
