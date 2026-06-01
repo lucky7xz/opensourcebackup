@@ -1,4 +1,8 @@
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth'
+
+const BASE = import.meta.env.VITE_API_URL || ''
+function csrfToken() { const m = document.cookie.match(/osb_csrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : '' }
 
 interface Props {
   title:       string
@@ -7,7 +11,20 @@ interface Props {
 }
 
 export function Topbar({ title, sub, alertCount = 0 }: Props) {
-  const nav = useNavigate()
+  const nav  = useNavigate()
+  const auth = useAuth()
+
+  function toggleTheme() {
+    const html = document.documentElement
+    const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light'
+    html.setAttribute('data-theme', next)
+    localStorage.setItem('osb-theme', next)
+  }
+
+  async function logout() {
+    await fetch(`${BASE}/auth/logout`, { method:'POST', headers:{'X-CSRF-Token':csrfToken()} }).catch(()=>{})
+    nav('/login')
+  }
   return (
     <div style={s.bar}>
       <div style={s.left}>
@@ -27,6 +44,9 @@ export function Topbar({ title, sub, alertCount = 0 }: Props) {
           🖥 Local
         </div>
 
+        {/* Theme toggle */}
+        <div style={s.iconBtn} onClick={toggleTheme} title="Toggle dark/light mode">🌙</div>
+
         {/* Notifications */}
         <div style={s.iconBtn} onClick={() => nav('/alerts')} title="Alerts">
           🔔
@@ -35,10 +55,11 @@ export function Topbar({ title, sub, alertCount = 0 }: Props) {
           )}
         </div>
 
-        {/* User */}
-        <div style={s.userBtn}>
-          <div style={s.avatar}>A</div>
-          <span style={s.userName}>Admin</span>
+        {/* User + Logout */}
+        <div style={s.userBtn} onClick={auth.authenticated ? logout : undefined} title={auth.authenticated ? 'Sign out' : ''}>
+          <div style={s.avatar}>{auth.email ? auth.email[0].toUpperCase() : 'A'}</div>
+          <span style={s.userName}>{auth.role ? auth.role.charAt(0).toUpperCase() + auth.role.slice(1) : 'Admin'}</span>
+          {auth.authenticated && <span style={{ fontSize:10, color:'var(--text-dim)' }}>↩</span>}
         </div>
       </div>
     </div>
