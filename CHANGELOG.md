@@ -12,6 +12,40 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — 2026-06-01 (continued)
+
+### Added — Productivity & Operations
+
+- **B_LOGIN** — Login page with email/password, session cookie, logout button in topbar
+- **Dark/Light Mode** — 🌙 toggle in topbar, persisted in localStorage
+- **B_NOTIFY** — Webhook notification channels in Settings (Slack/Teams/Discord/custom)
+  - Minimum severity filter (info / warning / critical)
+  - Test-webhook button
+  - Morning Report via webhook (`internal/notify/report.go`)
+- **Bandwidth-Throttling** — Policy → General → bandwidth limit KB/s (passed as `--limit-upload` to restic)
+- **Backup Pause-Window** — Scheduler now enforces `window_start`/`window_end` before dispatching; supports overnight windows (e.g. 22:00–06:00)
+- **Backup Verify Foundation** — `restic.Verify()` with optional `--read-data`; new job type `verify`
+- **Agent Auto-Update Foundation** — Heartbeat response includes `recommended_version` + `update_available`; no binary download yet (safe)
+- **B_STABILIZE** — Tests: backup window (incl. midnight-crossing), bandwidth flag, notification severity, morning report no-secrets check
+
+### Fixed
+
+- Exit status 3 from restic on Windows treated as partial success (locked files)
+- Activity chart x-axis labels rendered as HTML (crisp, not tiny SVG text)
+- Activity stats bar brighter with border separator
+- BrowserRouter `basename="/ui"` — fixes "No routes matched /ui/" error in LXC
+
+### Known Status (honest)
+
+| Feature | Status |
+|---|---|
+| Backup Verify | Foundation only — scheduler + agent pipeline not yet wired end-to-end |
+| Agent Auto-Update | Foundation only — no binary download |
+| B_NOTIFY webhooks | UI + send logic built; API endpoint for channel CRUD pending |
+| Morning Report | Logic built; scheduled dispatch pending |
+
+---
+
 ## [Unreleased] — 2026-06-01
 
 ### Added — Dashboard & UI
