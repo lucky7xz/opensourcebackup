@@ -39,6 +39,7 @@ export function Repositories() {
   const [repos,      setRepos]      = useState<BackupRepository[]>([])
   const [loading,    setLoading]    = useState(true)
   const [showForm,   setShowForm]   = useState(false)
+  const [editingId,  setEditingId]  = useState<string|null>(null)
   const [deleteFor,  setDeleteFor]  = useState<BackupRepository|null>(null)
   const [saving,     setSaving]     = useState(false)
   const [err,        setErr]        = useState<string|null>(null)
@@ -55,24 +56,39 @@ export function Repositories() {
 
   function resetForm() {
     setType('restic'); setLocation(''); setEncryption('aes256'); setWorm(false)
-    setImmutableMode('none'); setErr(null)
+    setImmutableMode('none'); setErr(null); setEditingId(null)
+  }
+
+  function openEdit(r: BackupRepository) {
+    setEditingId(r.ID)
+    setType(r.Type)
+    setLocation(r.Location)
+    setEncryption(r.EncryptionMode ?? 'aes256')
+    setImmutableMode(r.ImmutableMode ?? 'none')
+    setWorm(r.ObjectLockEnabled)
+    setErr(null)
+    setShowForm(true)
   }
 
   async function save() {
     if (!location.trim()) { setErr('Location is required.'); return }
     setSaving(true); setErr(null)
     try {
-      // Sync ObjectLockEnabled with immutable_mode for backward compatibility
       const objLock = worm || immutableMode === 'object_lock'
-      await api.createRepository({
+      const data = {
         Type:              type,
         Location:          location.trim(),
         EncryptionMode:    encryption.trim() || undefined,
         ObjectLockEnabled: objLock,
         ImmutableMode:     immutableMode,
-      })
+      }
+      if (editingId) {
+        await api.updateRepository(editingId, data)
+      } else {
+        await api.createRepository(data)
+      }
       setShowForm(false); resetForm(); await load()
-    } catch { setErr('Could not create repository. Check the location format.') }
+    } catch { setErr('Could not save repository. Check the location format.') }
     finally { setSaving(false) }
   }
 
@@ -103,8 +119,11 @@ export function Repositories() {
               { header:'ID',         render:r => <span style={s.mono}>{r.ID.slice(0,8)}…</span> },
               { header:'Created',    render:r => new Date(r.CreatedAt).toLocaleDateString() },
               { header:'',           render:r => (
-                  <button onClick={() => setDeleteFor(r)} style={s.delBtn}>🗑</button>
-                ), width:'40px' },
+                  <div style={{display:'flex',gap:4}}>
+                    <button onClick={() => openEdit(r)} style={s.editBtn}>✏</button>
+                    <button onClick={() => setDeleteFor(r)} style={s.delBtn}>🗑</button>
+                  </div>
+                ), width:'70px' },
             ]}
             rows={repos} keyFn={r => r.ID}
             empty="No repositories yet. Click '+ New Repository' to add your first backup destination."
@@ -114,7 +133,7 @@ export function Repositories() {
 
       {/* ── New Repository Modal ── */}
       {showForm && (
-        <Modal title="Register New Repository" onClose={() => { setShowForm(false); resetForm() }}>
+        <Modal title={editingId ? 'Edit Repository' : 'Register New Repository'} onClose={() => { setShowForm(false); resetForm() }}>
           <div>
             <div style={s.field}>
               <label style={s.label}>Type <span style={s.req}>*</span></label>
@@ -182,7 +201,7 @@ export function Repositories() {
             <div style={s.actions}>
               <button onClick={() => { setShowForm(false); resetForm() }} style={s.cancelBtn}>Cancel</button>
               <button onClick={save} disabled={saving || !location.trim()} style={s.submitBtn}>
-                {saving ? 'Saving…' : '✓ Register Repository'}
+                {saving ? 'Saving…' : editingId ? '✓ Save Changes' : '✓ Register Repository'}
               </button>
             </div>
           </div>
@@ -236,6 +255,7 @@ const s: Record<string, React.CSSProperties> = {
   enc:        { fontSize:12, color:'var(--success)' },
   worm:       { fontSize:12, color:'var(--success)' },
   dim:        { color:'var(--text-dim)', fontSize:12 },
+  editBtn:    { padding:'3px 8px', borderRadius:5, background:'rgba(245,158,11,0.08)', color:'var(--warning)', border:'1px solid rgba(245,158,11,0.2)', fontSize:12, cursor:'pointer' },
   delBtn:     { padding:'3px 8px', borderRadius:5, background:'rgba(244,63,94,0.08)', color:'var(--error)', border:'1px solid rgba(244,63,94,0.2)', fontSize:12, cursor:'pointer' },
   field:      { marginBottom:16 },
   row2:       { display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 },
