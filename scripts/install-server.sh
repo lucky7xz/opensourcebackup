@@ -20,6 +20,9 @@
 
 set -euo pipefail
 
+# Fix locale warnings in minimal containers (LXC)
+export LANG=C.UTF-8 LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive
+
 OSB_VERSION="${OSB_VERSION:-v0.1.0}"
 OSB_PORT="${OSB_PORT:-8080}"
 OSB_INSTALL_DIR="${OSB_INSTALL_DIR:-/opt/opensourcebackup}"
@@ -234,21 +237,38 @@ chown -R "$OSB_USER:$OSB_USER" "$WEB_UI_DIR" 2>/dev/null || true
 info "Step 5/6: Running database migrations..."
 DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}?sslmode=disable"
 
-# Install migrate tool
+# Install migrate tool — download explicitly to avoid pipe/tar issues
+MIGRATE_BIN="/usr/local/bin/migrate"
 if ! command -v migrate &>/dev/null; then
-  curl -fsSL "https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz" \
-    | tar -xz -C /usr/local/bin migrate
+  info "Installing golang-migrate..."
+  MIGRATE_URL="https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz"
+  curl -fsSL "$MIGRATE_URL" -o /tmp/migrate.tar.gz
+  tar -xzf /tmp/migrate.tar.gz -C /tmp
+  # Binary may be named 'migrate' or 'migrate.linux-amd64'
+  if [ -f /tmp/migrate ]; then
+    mv /tmp/migrate "$MIGRATE_BIN"
+  elif [ -f /tmp/migrate.linux-amd64 ]; then
+    mv /tmp/migrate.linux-amd64 "$MIGRATE_BIN"
+  fi
+  chmod +x "$MIGRATE_BIN"
+  rm -f /tmp/migrate.tar.gz /tmp/migrate.linux-amd64 2>/dev/null || true
 fi
 
-# Clone migrations if not building from source
-if [ ! -d "$OSB_INSTALL_DIR/migrations" ]; then
-  git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git /tmp/osb-migrations
-  cp -r /tmp/osb-migrations/migrations "$OSB_INSTALL_DIR/"
-  rm -rf /tmp/osb-migrations
-fi
+# Verify migrate is available
+if ! command -v migrate &>/dev/null && [ ! -x "$MIGRATE_BIN" ]; then
+  warn "migrate not found — skipping automatic migrations. Run manually after start:"
+  warn "  migrate -path $OSB_INSTALL_DIR/migrations -database \"\$DATABASE_URL\" up"
+else
+  # Clone migrations if not building from source
+  if [ ! -d "$OSB_INSTALL_DIR/migrations" ]; then
+    git clone --depth=1 https://github.com/cerberus8484/opensourcebackup.git /tmp/osb-migrations
+    cp -r /tmp/osb-migrations/migrations "$OSB_INSTALL_DIR/"
+    rm -rf /tmp/osb-migrations
+  fi
 
-migrate -path "$OSB_INSTALL_DIR/migrations" -database "$DATABASE_URL" up
-ok "Database migrations complete"
+  "$MIGRATE_BIN" -path "$OSB_INSTALL_DIR/migrations" -database "$DATABASE_URL" up
+  ok "Database migrations complete"
+fi
 
 # ── Step 6: systemd Service ──────────────────────────────────────────────────
 
