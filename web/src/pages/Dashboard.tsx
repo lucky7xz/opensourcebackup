@@ -215,8 +215,90 @@ export function Dashboard() {
 
       </div>
 
-      {/* ── Main content — 3-column fill ─────────────────────────────────── */}
-      <div style={s.mainGrid}>
+      {/* ══ ROW 2: Activity | Repository Health | Restore Verification ══════ */}
+      <div style={s.row3col}>
+
+        {/* Backup & Restore Activity */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Backup & Restore Activity (24h)</span>
+            <ActivityLegend />
+          </div>
+          <ActivityChart data={activity} height={160} />
+          <div style={s.activityStats}>
+            <span>Backups: <strong style={{ color: '#00d4ff' }}>{activity.reduce((a, b) => a + b.backups, 0)}</strong></span>
+            <span>Restore Tests: <strong style={{ color: '#00ff88' }}>{activity.reduce((a, b) => a + b.restore_tests, 0)}</strong></span>
+            <span>Failures: <strong style={{ color: '#ef4444' }}>{activity.reduce((a, b) => a + b.failures, 0)}</strong></span>
+          </div>
+        </div>
+
+        {/* Repository Health */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Repository Health</span>
+            <button onClick={() => navigate('/repositories')} style={s.viewAll}>Manage →</button>
+          </div>
+          {repos.length === 0 ? (
+            <div style={s.emptyState}>
+              <div style={{ fontSize: 12, color: 'var(--text-dim)', textAlign: 'center' }}>No repositories yet</div>
+            </div>
+          ) : repos.map(repo => {
+            const health = repoHealth.find(h => h.RepositoryID === repo.ID)
+            const imm = repo.ImmutableMode ?? 'none'
+            const immColor = (imm === 'object_lock' || imm === 'worm') ? 'var(--success)' : imm === 'append_only' ? '#22c55e' : 'var(--text-dim)'
+            const immLabel = { object_lock: '🔒 Object Lock', worm: '🔒 WORM', append_only: '📎 Append-Only', unknown: '? Unknown', none: '— None' }[imm] ?? '— None'
+            return (
+              <div key={repo.ID} style={{ borderBottom: '1px solid var(--border)', padding: '10px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ ...s.mono, fontSize: 11 }}>{repo.Location.length > 30 ? '…' + repo.Location.slice(-28) : repo.Location}</span>
+                  <span style={s.tag}>{repo.Type}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 16, fontSize: 11 }}>
+                  <span style={{ color: immColor }}>{immLabel}</span>
+                  <span style={{ color: health?.EncryptionEnabled ? 'var(--success)' : 'var(--warning)' }}>{health?.EncryptionEnabled ? '✓ AES-256' : '⚠ No enc'}</span>
+                  <span style={{ color: 'var(--text-dim)' }}>{health?.SnapshotCount ?? 0} snaps</span>
+                  <span style={{ color: 'var(--text-dim)' }}>Last: {timeAgo(health?.LastBackupAt)}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Restore Verification */}
+        <div style={s.card}>
+          <div style={s.cardHeader}>
+            <span style={s.cardTitle}>Restore Verification</span>
+            <button onClick={() => navigate('/restore-tests')} style={s.viewAll}>View all →</button>
+          </div>
+          {snapshots.length === 0 ? (
+            <div style={s.emptyState}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🔄</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>Run a backup first</div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '12px 0' }}>
+                <DonutChart segments={restoreDonut} size={100} thickness={14}
+                  center={<div style={{ textAlign: 'center' }}><div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{snapshots.length}</div><div style={{ fontSize: 9, color: 'var(--text-dim)' }}>Systems</div></div>}
+                />
+                <DonutLegend segments={restoreDonut} total={donutTotal} />
+              </div>
+              {restoreVerifiedPct < 100 && (
+                <div style={s.verifyNotice}>
+                  <span style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                    {untestedSnaps.length > 0 ? `${untestedSnaps.length} not yet tested` : `${failedOnlySnaps.length} failed`}
+                  </span>{' — '}
+                  <button onClick={() => navigate('/restore-tests')} style={s.inlineLink}>schedule →</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+      </div>
+
+      {/* ══ ROW 3: Recent Jobs | Agent Activity | Recent Alerts ══════════════ */}
+      <div style={s.row3col}>
 
         {/* Recent Jobs */}
         <div style={s.wideCard}>
@@ -226,11 +308,7 @@ export function Dashboard() {
           </div>
           <table style={s.table}>
             <thead>
-              <tr>
-                {['Job ID', 'System', 'Type', 'Status', 'Duration', 'Completed'].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
+              <tr>{['Job', 'System', 'Type', 'Status', 'Duration', 'Completed'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {recentJobs.length === 0 ? (
@@ -242,163 +320,45 @@ export function Dashboard() {
                   <td style={s.td}><span style={s.tag}>Backup</span></td>
                   <td style={s.td}><StatusBadge status={j.Status} /></td>
                   <td style={s.td}>{duration(j.StartedAt, j.FinishedAt)}</td>
-                  <td style={s.td} >{timeAgo(j.FinishedAt || j.CreatedAt)}</td>
+                  <td style={s.td}>{timeAgo(j.FinishedAt || j.CreatedAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* Restore Verification donut */}
+        {/* Agent Activity */}
         <div style={s.card}>
           <div style={s.cardHeader}>
-            <span style={s.cardTitle}>Restore Verification</span>
-            <button onClick={() => navigate('/restore-tests')} style={s.viewAll}>View all →</button>
+            <span style={s.cardTitle}>Agent Activity</span>
+            <button onClick={() => navigate('/agents')} style={s.viewAll}>View all →</button>
           </div>
-
-          {snapshots.length === 0 ? (
-            <div style={s.emptyState}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🔄</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
-                No snapshots yet.<br />Run a backup first, then configure restore tests.
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', gap: 20, alignItems: 'center', padding: '8px 0 16px' }}>
-                <DonutChart
-                  segments={restoreDonut}
-                  size={110}
-                  thickness={16}
-                  center={
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>
-                        {snapshots.length}
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-dim)' }}>Snapshots</div>
-                    </div>
-                  }
-                />
-                <DonutLegend segments={restoreDonut} total={donutTotal} />
-              </div>
-
-              {restoreVerifiedPct < 100 && (
-                <div style={s.verifyNotice}>
-                  <span style={{ color: 'var(--warning)', fontWeight: 600 }}>
-                    {untestedSnaps.length > 0
-                      ? `${untestedSnaps.length} snapshot${untestedSnaps.length > 1 ? 's' : ''} not yet tested`
-                      : `${failedOnlySnaps.length} restore test${failedOnlySnaps.length > 1 ? 's' : ''} failed`
-                    }
-                  </span>
-                  {' — '}
-                  <button onClick={() => navigate('/restore-tests')} style={s.inlineLink}>
-                    schedule restore tests →
-                  </button>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '8px 0 12px' }}>
+            <DonutChart segments={agentDonut} size={90} thickness={13}
+              center={<div style={{ textAlign: 'center' }}><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{systems.length}</div><div style={{ fontSize: 9, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Agents</div></div>}
+            />
+            <DonutLegend segments={agentDonut} total={systems.length} />
+          </div>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Last Seen</div>
+            {systemsByLastSeen.slice(0, 6).map(sys => {
+              const st = agentStatus(sys)
+              const dot = st === 'online' ? 'var(--success)' : st === 'idle' ? 'var(--warning)' : 'var(--error)'
+              return (
+                <div key={sys.ID} style={s.agentRow2}>
+                  <span style={{ ...s.statusDot, background: dot, boxShadow: st === 'online' ? `0 0 5px ${dot}` : 'none' }} />
+                  <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{sys.Hostname}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{sys.LastSeen ? timeAgo(sys.LastSeen) : 'never'}</span>
                 </div>
-              )}
-            </>
-          )}
+              )
+            })}
+          </div>
         </div>
 
-        {/* Storage summary */}
+        {/* Recent Alerts */}
         <div style={s.card}>
           <div style={s.cardHeader}>
-            <span style={s.cardTitle}>Storage Used</span>
-          </div>
-          <div style={{ padding: '8px 0' }}>
-            <div style={s.storageTotal}>
-              {fmt(jobs.reduce((a, j) => a + (j.BytesUploaded ?? 0), 0))}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>
-              across {snapshots.length} snapshot{snapshots.length !== 1 ? 's' : ''}
-            </div>
-            <div style={s.divider} />
-            <StatRow label="Successful jobs" value={`${successJobs}`} color="var(--success)" />
-            <StatRow label="Failed jobs"     value={`${failedJobs}`}  color={failedJobs > 0 ? 'var(--error)' : 'var(--text-dim)'} />
-            <StatRow label="Total jobs"      value={`${jobs.length}`} color="var(--text-muted)" />
-          </div>
-        </div>
-
-      </div>
-
-      {/* ── Repository Health ─────────────────────────────────────────────── */}
-      {repos.length > 0 && (
-        <div style={{ ...s.card, marginTop: 16 }}>
-          <div style={s.cardHeader}>
-            <span style={s.cardTitle}>Repository Health</span>
-            <button onClick={() => navigate('/repositories')} style={s.viewAll}>Manage →</button>
-          </div>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                {['Repository', 'Type', 'Immutability', 'Encryption', 'Snapshots', 'Verified', 'Last Backup', 'Last Restore Test'].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {repos.map(repo => {
-                const health = repoHealth.find(h => h.RepositoryID === repo.ID)
-                const imm = repo.ImmutableMode ?? 'none'
-                const immColor = (imm === 'object_lock' || imm === 'worm') ? 'var(--success)'
-                  : imm === 'append_only' ? '#22c55e'
-                  : imm === 'unknown' ? 'var(--warning)'
-                  : 'var(--text-dim)'
-                const immLabel = {
-                  object_lock: '🔒 Object Lock', worm: '🔒 WORM',
-                  append_only: '📎 Append-Only', unknown: '? Unknown', none: '— None',
-                }[imm] ?? '— None'
-
-                return (
-                  <tr key={repo.ID} style={s.tr}>
-                    <td style={s.td}><span style={s.mono}>{repo.Location.length > 28 ? repo.Location.slice(-28) : repo.Location}</span></td>
-                    <td style={s.td}><span style={s.tag}>{repo.Type}</span></td>
-                    <td style={s.td}><span style={{ fontSize: 12, color: immColor, fontWeight: 600 }}>{immLabel}</span></td>
-                    <td style={s.td}>
-                      {health?.EncryptionEnabled
-                        ? <span style={{ color: 'var(--success)', fontSize: 12 }}>✓ AES-256</span>
-                        : <span style={{ color: 'var(--warning)', fontSize: 12 }}>⚠ Off</span>}
-                    </td>
-                    <td style={s.td}>{health?.SnapshotCount ?? '—'}</td>
-                    <td style={s.td}>
-                      {health && health.SnapshotCount > 0
-                        ? <span style={{ color: health.VerifiedCount === health.SnapshotCount ? 'var(--success)' : 'var(--warning)', fontSize: 12, fontWeight: 600 }}>
-                            {health.VerifiedCount}/{health.SnapshotCount}
-                          </span>
-                        : <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>—</span>
-                      }
-                    </td>
-                    <td style={s.td}>{timeAgo(health?.LastBackupAt)}</td>
-                    <td style={s.td}>{timeAgo(health?.LastRestoreTestAt)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── Activity Chart + Alerts + Evidence ────────────────────────────── */}
-      <div style={s.threeCol}>
-
-        {/* Backup & Restore Activity Chart */}
-        <div style={{ ...s.card, gridColumn: 'span 2' }}>
-          <div style={s.cardHeader}>
-            <span style={s.cardTitle}>Backup & Restore Activity (24h)</span>
-            <ActivityLegend />
-          </div>
-          <ActivityChart data={activity} height={150} />
-          <div style={s.activityStats}>
-            <span>Backups: <strong style={{ color: '#00d4ff' }}>{activity.reduce((a, b) => a + b.backups, 0)}</strong></span>
-            <span>Restore Tests: <strong style={{ color: '#00ff88' }}>{activity.reduce((a, b) => a + b.restore_tests, 0)}</strong></span>
-            <span>Failures: <strong style={{ color: '#ef4444' }}>{activity.reduce((a, b) => a + b.failures, 0)}</strong></span>
-          </div>
-        </div>
-
-        {/* Alerts Preview */}
-        <div style={s.card}>
-          <div style={s.cardHeader}>
-            <span style={s.cardTitle}>Alerts</span>
+            <span style={s.cardTitle}>Recent Alerts</span>
             <button onClick={() => navigate('/alerts')} style={s.viewAll}>View all →</button>
           </div>
           {alerts.length === 0 ? (
@@ -408,119 +368,28 @@ export function Dashboard() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-              {alerts.slice(0, 4).map((a: any) => (
+              {alerts.slice(0, 5).map((a: any) => (
                 <div key={a.code} style={s.alertPreviewItem}>
-                  <span style={{ fontSize: 14 }}>
-                    {a.severity === 'critical' ? '🔴' : a.severity === 'warning' ? '⚠️' : 'ℹ️'}
-                  </span>
+                  <span style={{ fontSize: 13 }}>{a.severity === 'critical' ? '🔴' : a.severity === 'warning' ? '⚠️' : 'ℹ️'}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {a.title}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 1 }}>
-                      {a.category} · −{a.points} pts
-                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 1 }}>{a.category} · −{a.points} pts</div>
                   </div>
                 </div>
               ))}
-              {alerts.length > 4 && (
-                <button onClick={() => navigate('/alerts')} style={s.viewAll}>
-                  +{alerts.length - 4} more →
-                </button>
-              )}
+              {alerts.length > 5 && <button onClick={() => navigate('/alerts')} style={s.viewAll}>+{alerts.length - 5} more →</button>}
             </div>
           )}
-        </div>
-
-      </div>
-
-      {/* ── Recent Evidence ────────────────────────────────────────────────── */}
-      {evidence.length > 0 && (
-        <div style={{ ...s.card, marginTop: 16 }}>
-          <div style={s.cardHeader}>
-            <span style={s.cardTitle}>Recent Evidence</span>
-            <button onClick={() => navigate('/evidence')} style={s.viewAll}>View all →</button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {evidence.map((e: any) => (
-              <div key={e.ID} style={s.evidenceItem}>
-                <span style={{ fontSize: 12, color: '#00ff88' }}>✓</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <span style={s.mono}>{e.Action}</span>
-                  {e.ResourceType && (
-                    <span style={{ fontSize: 11, color: 'var(--text-dim)', marginLeft: 8 }}>
-                      {e.ResourceType}
-                    </span>
-                  )}
+          {evidence.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Recent Evidence</div>
+              {evidence.slice(0, 3).map((e: any) => (
+                <div key={e.ID} style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ fontSize: 11, color: '#00ff88' }}>✓</span>
+                  <span style={{ ...s.mono, fontSize: 10, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.Action}</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-dim)', flexShrink: 0 }}>{timeAgo(e.Timestamp)}</span>
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--text-dim)', flexShrink: 0 }}>
-                  {timeAgo(e.Timestamp)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Agent Activity ─────────────────────────────────────────────────── */}
-      <div style={s.agentRow}>
-
-        {/* Donut */}
-        <div style={{ ...s.card, display: 'flex', gap: 20, alignItems: 'center' }}>
-          <DonutChart
-            segments={agentDonut}
-            size={100}
-            thickness={15}
-            center={
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
-                  {systems.length}
-                </div>
-                <div style={{ fontSize: 9, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Agents
-                </div>
-              </div>
-            }
-          />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              Agent Activity
-            </div>
-            <DonutLegend segments={agentDonut} total={systems.length} />
-            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 8, fontStyle: 'italic' }}>
-              Online ≤ 2min · Idle ≤ 15min · Offline = no heartbeat
-            </div>
-          </div>
-        </div>
-
-        {/* Last Seen list */}
-        <div style={{ ...s.card, flex: 2 }}>
-          <div style={{ ...s.cardHeader, paddingLeft: 0, paddingTop: 0 }}>
-            <span style={s.cardTitle}>Last Seen</span>
-          </div>
-          {systems.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', padding: '8px 0' }}>
-              No agents enrolled yet.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-              {systemsByLastSeen.slice(0, 8).map(sys => {
-                const st = agentStatus(sys)
-                const dot = st === 'online'  ? 'var(--success)'
-                          : st === 'idle'    ? 'var(--warning)'
-                          : 'var(--error)'
-                const age = sys.LastSeen
-                  ? timeAgo(sys.LastSeen)
-                  : 'never'
-                return (
-                  <div key={sys.ID} style={s.agentRow2}>
-                    <span style={{ ...s.statusDot, background: dot, boxShadow: st === 'online' ? `0 0 5px ${dot}` : 'none' }} />
-                    <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{sys.Hostname}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{age}</span>
-                  </div>
-                )
-              })}
+              ))}
             </div>
           )}
         </div>
@@ -589,10 +458,13 @@ const s: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
-  mainGrid: {
+  mainGrid: { display: 'none' }, // replaced by row3col
+
+  row3col: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: 16,
+    marginBottom: 16,
     alignItems: 'start',
   },
 
