@@ -222,7 +222,7 @@ pct exec "$CT_ID" -- bash -c "
   fi
   DB_PASSWORD=\$(cat \"\$CREDS_DIR/.db_password\")
 
-  # docker-compose.yml
+  # docker-compose.yml — Named Volume für PostgreSQL (kein Permissions-Problem)
   cat > /opt/opensourcebackup/docker-compose.yml << DCEOF
 services:
   postgres:
@@ -233,11 +233,11 @@ services:
       POSTGRES_PASSWORD: \${DB_PASSWORD}
       POSTGRES_DB: opensourcebackup
     volumes:
-      - /var/lib/opensourcebackup/postgres:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     ports:
       - '127.0.0.1:5432:5432'
     healthcheck:
-      test: [\"CMD-SHELL\", \"pg_isready -U opensourcebackup\"]
+      test: ["CMD-SHELL", "pg_isready -U opensourcebackup"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -246,24 +246,16 @@ services:
     restart: always
     ports:
       - '127.0.0.1:6379:6379'
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
 DCEOF
 
-  # Schritt 1: PostgreSQL UID aus dem Image lesen (alpine=70, debian=999)
-  PGUID=$(docker run --rm --entrypoint id postgres:16-alpine -u postgres 2>/dev/null || echo 70)
-  echo "PostgreSQL data dir owner UID: $PGUID"
-
-  # Schritt 2: Permissions VOR dem Start setzen
-  chown -R ${PGUID}:${PGUID} /var/lib/opensourcebackup/postgres
-
-  # Schritt 3: Container starten damit PostgreSQL initialisiert
+  # Container starten — Docker verwaltet Permissions selbst (named volumes)
   docker compose -f /opt/opensourcebackup/docker-compose.yml up -d
-  sleep 10
-
-  # Schritt 4: Nochmal chown nach Init (PostgreSQL darf Dirs neu anlegen)
-  docker stop opensourcebackup-postgres-1 2>/dev/null || true
-  sleep 2
-  chown -R ${PGUID}:${PGUID} /var/lib/opensourcebackup/postgres
-  docker start opensourcebackup-postgres-1
 
   echo 'DOCKER_OK'
 "
