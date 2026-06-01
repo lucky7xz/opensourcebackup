@@ -85,7 +85,17 @@ export function Dashboard() {
   const bytes7d = jobs
     .filter(j => j.Status === 'success' && (Date.now() - new Date(j.CreatedAt).getTime()) < 7 * 86_400_000)
     .reduce((a, j) => a + (j.BytesUploaded ?? 0), 0)
-  const throughputSparkline = activity.map(b => b.backups * 10) // proxy until per-hour bytes available
+  // Daily backup counts for last 7 days (sparkline in throughput KPI card)
+  const dailyBackupCounts = Array.from({ length: 7 }, (_, i) => {
+    const dayStart = new Date(Date.now() - (6 - i) * 86_400_000)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000)
+    return jobs.filter(j =>
+      j.Status === 'success' &&
+      new Date(j.CreatedAt) >= dayStart &&
+      new Date(j.CreatedAt) < dayEnd
+    ).length
+  })
   const systemMap       = Object.fromEntries(systems.map(s => [s.ID, s.Hostname]))
   const recentJobs      = [...jobs]
     .sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime())
@@ -140,7 +150,7 @@ export function Dashboard() {
             value={fmtBytes(bytes24h)}
             sub={bytes7d > 0 ? `${fmtBytes(bytes7d)} in last 7 days` : 'No backups yet'}
             color="var(--accent-teal)"
-            sparkData={throughputSparkline} sparkColor="var(--accent-teal)"
+            sparkData={dailyBackupCounts} sparkColor="var(--accent-teal)"
             trend={bytes24h > 0 ? 'incremental — deduped' : undefined}
           />
           <HealthScoreCard score={healthScore} />
