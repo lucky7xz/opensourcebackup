@@ -215,7 +215,7 @@ export function Dashboard() {
 
       </div>
 
-      {/* ── Main content ──────────────────────────────────────────────────── */}
+      {/* ── Main content — 3-column fill ─────────────────────────────────── */}
       <div style={s.mainGrid}>
 
         {/* Recent Jobs */}
@@ -564,7 +564,7 @@ function StatRow({ label, value, color }: { label: string; value: string; color:
 // ── Styles ─────────────────────────────────────────────────────────────────
 
 const s: Record<string, React.CSSProperties> = {
-  page:        { padding: '28px 36px', maxWidth: 1300 },
+  page:        { padding: '28px 36px' },
   loading:     { padding: 40, color: 'var(--text-muted)', textAlign: 'center' },
   header:      { marginBottom: 24 },
   h1:          { fontSize: 22, fontWeight: 700, color: 'var(--text)', marginBottom: 2 },
@@ -591,7 +591,7 @@ const s: Record<string, React.CSSProperties> = {
 
   mainGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 320px 220px',
+    gridTemplateColumns: '1fr 1fr 1fr',
     gap: 16,
     alignItems: 'start',
   },
