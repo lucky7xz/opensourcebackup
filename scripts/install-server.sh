@@ -97,6 +97,8 @@ fi
 
 info "Step 2/6: Creating directories and user..."
 mkdir -p "$OSB_INSTALL_DIR" "$OSB_DATA_DIR/postgres" "$OSB_DATA_DIR/certs"
+# Fix PostgreSQL data directory permissions BEFORE starting Docker
+chown -R 999:999 "$OSB_DATA_DIR/postgres" 2>/dev/null || true
 
 # Create system user
 if ! id "$OSB_USER" &>/dev/null; then
