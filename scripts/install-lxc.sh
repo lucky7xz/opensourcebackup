@@ -248,19 +248,21 @@ services:
       - '127.0.0.1:6379:6379'
 DCEOF
 
-  # Schritt 1: Container starten damit PostgreSQL das Datenverzeichnis initialisiert
+  # Schritt 1: PostgreSQL UID aus dem Image lesen (alpine=70, debian=999)
+  PGUID=$(docker run --rm --entrypoint id postgres:16-alpine -u postgres 2>/dev/null || echo 70)
+  echo "PostgreSQL data dir owner UID: $PGUID"
+
+  # Schritt 2: Permissions VOR dem Start setzen
+  chown -R ${PGUID}:${PGUID} /var/lib/opensourcebackup/postgres
+
+  # Schritt 3: Container starten damit PostgreSQL initialisiert
   docker compose -f /opt/opensourcebackup/docker-compose.yml up -d
+  sleep 10
 
-  # Schritt 2: Warten bis PostgreSQL das Verzeichnis angelegt hat (ca. 5s)
-  sleep 8
-
-  # Schritt 3: PostgreSQL stoppen
+  # Schritt 4: Nochmal chown nach Init (PostgreSQL darf Dirs neu anlegen)
   docker stop opensourcebackup-postgres-1 2>/dev/null || true
-
-  # Schritt 4: Permissions korrigieren (NACH Initialisierung — das ist entscheidend)
-  chown -R 999:999 /var/lib/opensourcebackup/postgres
-
-  # Schritt 5: PostgreSQL neu starten mit korrekten Permissions
+  sleep 2
+  chown -R ${PGUID}:${PGUID} /var/lib/opensourcebackup/postgres
   docker start opensourcebackup-postgres-1
 
   echo 'DOCKER_OK'
