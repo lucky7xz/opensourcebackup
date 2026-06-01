@@ -26,9 +26,18 @@ export function Dashboard() {
   const [repoHealth,   setRepoHealth]   = useState<RepositoryHealth[]>([])
   const [healthScore,  setHealthScore]  = useState<HealthScore|null>(null)
   const [activity,     setActivity]     = useState<ActivityBucket[]>([])
+  const [actRange,     setActRange]     = useState<'24h'|'7d'|'30d'|'1y'>('24h')
   const [alerts,       setAlerts]       = useState<any[]>([])
   const [evidence,     setEvidence]     = useState<any[]>([])
   const [loading,      setLoading]      = useState(true)
+
+  const loadActivity = (range: '24h'|'7d'|'30d'|'1y') => {
+    const p = range === '24h' ? api.healthActivity(24)
+            : range === '7d'  ? api.healthActivityDays(7)
+            : range === '30d' ? api.healthActivityDays(30)
+            : api.healthActivityWeeks(52)
+    p.then(setActivity).catch(() => setActivity([]))
+  }
 
   useEffect(() => {
     Promise.all([
@@ -142,9 +151,14 @@ export function Dashboard() {
           <div className="dash-card" style={s.actCard}>
             <div style={s.cardHeader}>
               <span style={s.cardTitle}>Backup & Restore Activity</span>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <ActivityLegend />
-                <span style={s.timeBadge}>Last 24h</span>
+                {(['24h','7d','30d','1y'] as const).map(r => (
+                  <button key={r} onClick={() => { setActRange(r); loadActivity(r) }}
+                    style={{ ...s.rangeBtn, ...(actRange === r ? s.rangeBtnOn : {}) }}>
+                    {r}
+                  </button>
+                ))}
               </div>
             </div>
             {activity.every(b => b.backups === 0 && b.restore_tests === 0 && b.failures === 0)
@@ -155,6 +169,9 @@ export function Dashboard() {
                     <span>Backups: <strong style={{ color:'#38bdf8' }}>{activity.reduce((a,b)=>a+b.backups,0)}</strong></span>
                     <span>Restore Tests: <strong style={{ color:'var(--success)' }}>{activity.reduce((a,b)=>a+b.restore_tests,0)}</strong></span>
                     <span>Failures: <strong style={{ color:'var(--error)' }}>{activity.reduce((a,b)=>a+b.failures,0)}</strong></span>
+                    <span style={{ marginLeft:'auto', color:'var(--accent-teal)', fontWeight:600 }}>
+                      📦 {fmtBytes(activity.reduce((a,b)=>a+(b.bytes_added??0),0))} transferred
+                    </span>
                   </div>
                 </>
             }
@@ -192,6 +209,8 @@ const s: Record<string, React.CSSProperties> = {
   cardHeader:{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'13px 18px 10px', borderBottom:'1px solid var(--border)' },
   cardTitle: { fontSize:13, fontWeight:700 },
   timeBadge: { fontSize:10, padding:'3px 8px', borderRadius:5, background:'var(--bg-card-soft)', color:'var(--text-muted)', border:'1px solid var(--border)', fontWeight:600 },
-  actStats:  { display:'flex', gap:20, padding:'8px 18px 14px', fontSize:11, color:'var(--text-muted)' },
+  actStats:  { display:'flex', gap:20, padding:'8px 18px 14px', fontSize:11, color:'var(--text-muted)', alignItems:'center' },
+  rangeBtn:  { padding:'3px 8px', borderRadius:5, background:'var(--bg-card-soft)', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:10, fontWeight:700, cursor:'pointer' },
+  rangeBtnOn:{ background:'var(--accent-dim)', borderColor:'var(--accent)', color:'var(--accent)' },
   actEmpty:  { padding:'28px 20px', fontSize:12, color:'var(--text-dim)', textAlign:'center' as const, fontStyle:'italic' },
 }
