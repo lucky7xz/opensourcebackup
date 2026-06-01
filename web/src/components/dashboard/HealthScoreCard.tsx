@@ -2,58 +2,74 @@ import type { HealthScore } from '../../api'
 
 interface Props { score: HealthScore | null }
 
+const LABEL_COLOR: Record<string, string> = {
+  Excellent: '#22c55e',
+  Good:      '#4ade80',
+  Fair:      '#f59e0b',
+  'At Risk': '#ef4444',
+}
+
 export function HealthScoreCard({ score }: Props) {
   if (!score) return (
-    <div className="dash-card" style={s.card}>
-      <div style={s.loading}>Loading score…</div>
+    <div style={s.card}>
+      <div style={s.loadingText}>Loading score…</div>
     </div>
   )
 
-  const { score: val, label, color, deductions, factors } = score
-  const strokeColor = color.startsWith('var') ? undefined : color
+  const { score: val, label, deductions, factors } = score
+  const color = LABEL_COLOR[label] ?? '#94a3b8'
 
   // SVG ring
-  const R = 36, C = 2 * Math.PI * R
-  const progress = (val / 100) * C
+  const R = 38, SW = 8
+  const C = 2 * Math.PI * R
+  const progress = Math.max(0, Math.min(val / 100, 1)) * C
 
   return (
-    <div className="dash-card" style={s.card}>
-      <div style={s.top}>
-        <div style={s.label}>Backup Health Score</div>
+    <div style={s.card}>
+      <div style={s.topRow}>
+        <span style={s.cardLabel}>Backup Health Score</span>
+        <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>v{score.version}</span>
       </div>
 
       <div style={s.body}>
         {/* Ring gauge */}
-        <div style={s.ringWrap}>
-          <svg width={90} height={90} viewBox="0 0 90 90">
-            <circle cx={45} cy={45} r={R} fill="none" stroke="var(--border)" strokeWidth={8} />
-            <circle cx={45} cy={45} r={R} fill="none"
-              stroke={strokeColor ?? 'var(--accent)'}
-              strokeWidth={8}
-              strokeDasharray={`${progress} ${C}`}
-              strokeDashoffset={C / 4}
+        <div style={s.ringBox}>
+          <svg width={92} height={92} viewBox="0 0 92 92">
+            {/* Track */}
+            <circle cx={46} cy={46} r={R} fill="none"
+              stroke="rgba(255,255,255,0.06)" strokeWidth={SW} />
+            {/* Progress */}
+            <circle cx={46} cy={46} r={R} fill="none"
+              stroke={color} strokeWidth={SW}
+              strokeDasharray={`${progress.toFixed(1)} ${C.toFixed(1)}`}
+              strokeDashoffset={(C * 0.25).toFixed(1)}
               strokeLinecap="round"
-              style={{ transition: 'stroke-dasharray 0.6s ease' }}
+              style={{ transition: 'stroke-dasharray 0.8s ease, stroke 0.4s' }}
             />
-            <text x={45} y={42} textAnchor="middle" fontSize={18} fontWeight={800} fill="var(--text)">{val}</text>
-            <text x={45} y={56} textAnchor="middle" fontSize={9} fill="var(--text-muted)">/ 100</text>
+            {/* Score number */}
+            <text x={46} y={41} textAnchor="middle"
+              fontSize={20} fontWeight={800} fill="var(--text)">{val}</text>
+            <text x={46} y={54} textAnchor="middle"
+              fontSize={8} fill="var(--text-dim)">/ 100</text>
           </svg>
-          <div style={{ ...s.scoreLabel, color: strokeColor ?? 'var(--accent)' }}>{label}</div>
-          <div style={s.scoreVersion}>Score v{score.version}</div>
+          {/* Label below ring */}
+          <div style={{ fontSize: 12, fontWeight: 700, color, marginTop: -2 }}>{label}</div>
         </div>
 
         {/* Evidence lines */}
         <div style={s.evidence}>
           {deductions.slice(0, 3).map((d, i) => (
-            <div key={i} style={s.evidLine}>
-              <span style={{ color: 'var(--error)', fontWeight: 700, minWidth: 26 }}>−{d.points}</span>
-              <span style={s.evidText}>{d.reason}</span>
+            <div key={i} style={s.deductLine}>
+              <span style={{ color: 'var(--error)', fontWeight: 700, fontSize: 11, minWidth: 22 }}>
+                −{d.points}
+              </span>
+              <span style={s.deductText}>{d.reason}</span>
             </div>
           ))}
           {factors.slice(0, 2).map((f, i) => (
-            <div key={i} style={s.evidLine}>
-              <span style={{ color: 'var(--success)', minWidth: 26 }}>✓</span>
-              <span style={s.evidText}>{f}</span>
+            <div key={i} style={s.factorLine}>
+              <span style={{ color: 'var(--success)', fontSize: 11, minWidth: 22 }}>✓</span>
+              <span style={s.deductText}>{f}</span>
             </div>
           ))}
         </div>
@@ -63,15 +79,22 @@ export function HealthScoreCard({ score }: Props) {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  card:       { padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, height: '100%' },
-  loading:    { color: 'var(--text-muted)', fontSize: 13 },
-  top:        { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  label:      { fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' },
-  body:       { display: 'flex', gap: 16, alignItems: 'flex-start' },
-  ringWrap:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 },
-  scoreLabel: { fontSize: 13, fontWeight: 700 },
-  scoreVersion:{ fontSize: 10, color: 'var(--text-dim)' },
-  evidence:   { flex: 1, display: 'flex', flexDirection: 'column', gap: 5 },
-  evidLine:   { display: 'flex', gap: 8, alignItems: 'flex-start' },
-  evidText:   { fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 },
+  card: {
+    background: 'linear-gradient(160deg, var(--bg-card-soft) 0%, var(--bg-card) 100%)',
+    border: '1px solid var(--border)',
+    borderRadius: 14,
+    padding: '16px 18px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
+    display: 'flex', flexDirection: 'column', gap: 8,
+    height: '100%',
+  },
+  loadingText: { color: 'var(--text-muted)', fontSize: 12 },
+  topRow:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  cardLabel:{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.12em' },
+  body:     { display: 'flex', gap: 12, alignItems: 'flex-start', flex: 1 },
+  ringBox:  { display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, gap: 2 },
+  evidence: { flex: 1, display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 },
+  deductLine:{ display: 'flex', gap: 6, alignItems: 'flex-start' },
+  factorLine:{ display: 'flex', gap: 6, alignItems: 'flex-start' },
+  deductText:{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis' },
 }

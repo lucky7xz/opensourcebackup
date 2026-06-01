@@ -1,10 +1,9 @@
-import { useRef } from 'react'
-
 export interface ActivityBucket {
   hour:          string
   backups:       number
   restore_tests: number
   failures:      number
+  bytes_added?:  number
 }
 
 interface Props {
@@ -13,97 +12,114 @@ interface Props {
 }
 
 const COLORS = {
-  backups:      '#00d4ff',
-  restoreTests: '#00ff88',
+  backups:      '#38bdf8',
+  restoreTests: '#22c55e',
   failures:     '#ef4444',
 }
 
 /**
- * Lightweight SVG bar chart for backup/restore/failure activity.
- * No external chart library — keeps bundle size minimal.
+ * Smooth area/line chart for backup activity.
+ * Uses SVG polylines with fill areas — no external library.
  */
-export function ActivityChart({ data, height = 140 }: Props) {
-  const canvasRef = useRef<HTMLDivElement>(null)
-
-  if (!data || data.length === 0) {
+export function ActivityChart({ data, height = 160 }: Props) {
+  if (!data || data.length < 2) {
     return (
-      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>No activity data yet</span>
+      <div style={{ height, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span style={{ fontSize:12, color:'var(--text-dim)', fontStyle:'italic' }}>
+          Activity history will appear as jobs and restore tests are collected.
+        </span>
       </div>
     )
   }
 
-  const w      = 100  // SVG viewBox width
-  const padB   = 4    // bottom padding (labels now outside SVG)
-  const padT   = 6    // top padding
-  const chartH = height - padB - padT
-  const n      = data.length
-  const barW   = (w / n) * 0.7
-  const gap    = (w / n) * 0.3
+  const W = 1000  // viewBox width
+  const padL = 8, padR = 8, padT = 12, padB = 4
+  const chartW = W - padL - padR
+  const chartH = height - padT - padB
 
-  const maxVal = Math.max(1, ...data.map(d => d.backups + d.restore_tests + d.failures))
+  const maxVal = Math.max(1,
+    ...data.map(d => d.backups),
+    ...data.map(d => d.restore_tests),
+    ...data.map(d => d.failures),
+  )
 
-  // Show every Nth label to avoid crowding
-  const labelEvery = n <= 12 ? 1 : n <= 24 ? 4 : 6
+  const n = data.length
+  const xOf = (i: number) => padL + (i / (n - 1)) * chartW
+  const yOf = (v: number) => padT + chartH - (v / maxVal) * chartH
 
-  const toY = (v: number) => padT + chartH - (v / maxVal) * chartH
+  const line = (key: keyof ActivityBucket) =>
+    data.map((d, i) => `${xOf(i).toFixed(1)},${yOf(Number(d[key] ?? 0)).toFixed(1)}`).join(' ')
+
+  const area = (key: keyof ActivityBucket, color: string) => {
+    const pts = data.map((d, i) => `${xOf(i).toFixed(1)},${yOf(Number(d[key] ?? 0)).toFixed(1)}`)
+    const bot = `${xOf(n-1).toFixed(1)},${(padT+chartH).toFixed(1)} ${padL},${(padT+chartH).toFixed(1)}`
+    return (
+      <g key={key as string}>
+        <polygon
+          points={pts.join(' ') + ' ' + bot}
+          fill={color} fillOpacity={0.08}
+        />
+        <polyline
+          points={pts.join(' ')}
+          fill="none" stroke={color} strokeWidth={1.5}
+          strokeLinecap="round" strokeLinejoin="round"
+        />
+      </g>
+    )
+  }
+
+  // Label every Nth point
+  const labelEvery = n <= 12 ? 2 : n <= 24 ? 4 : n <= 48 ? 8 : 12
 
   return (
-    <div ref={canvasRef} style={{ width: '100%', height }}>
+    <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:0 }}>
       <svg
-        viewBox={`0 0 100 ${height}`}
+        viewBox={`0 0 ${W} ${height}`}
         preserveAspectRatio="none"
-        style={{ width: '100%', height: '100%' }}
+        style={{ width:'100%', height, display:'block' }}
       >
         {/* Grid lines */}
-        {[0, 0.5, 1].map((f, i) => (
-          <line
-            key={i}
-            x1={0} y1={padT + chartH * (1 - f)}
-            x2={100} y2={padT + chartH * (1 - f)}
-            stroke="rgba(255,255,255,0.06)" strokeWidth={0.3}
+        {[0.25, 0.5, 0.75, 1].map(f => (
+          <line key={f}
+            x1={padL} y1={(padT + chartH * (1-f)).toFixed(1)}
+            x2={W-padR} y2={(padT + chartH * (1-f)).toFixed(1)}
+            stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
+        ))}
+
+        {/* Areas + lines */}
+        {area('failures',     COLORS.failures)}
+        {area('restore_tests',COLORS.restoreTests)}
+        {area('backups',      COLORS.backups)}
+
+        {/* Data dots on hover — invisible hit targets */}
+        {data.map((d, i) => (
+          <circle key={i}
+            cx={xOf(i)} cy={yOf(d.backups)}
+            r={3} fill={COLORS.backups} opacity={0}
           />
         ))}
 
-        {/* Bars — stacked: backups + restore_tests + failures */}
-        {data.map((d, i) => {
-          const x    = (i / n) * w + gap / 2
-          const bH   = (d.backups / maxVal) * chartH
-          const rtH  = (d.restore_tests / maxVal) * chartH
-          const fH   = (d.failures / maxVal) * chartH
-          const baseY  = toY(d.backups + d.restore_tests + d.failures)
-
-          return (
-            <g key={i}>
-              {/* Backups (bottom) */}
-              {bH > 0 && (
-                <rect x={x} y={baseY + rtH + fH} width={barW} height={bH}
-                  fill={COLORS.backups} opacity={0.8} rx={0.4} />
-              )}
-              {/* Restore tests (middle) */}
-              {rtH > 0 && (
-                <rect x={x} y={baseY + fH} width={barW} height={rtH}
-                  fill={COLORS.restoreTests} opacity={0.8} rx={0.4} />
-              )}
-              {/* Failures (top — red) */}
-              {fH > 0 && (
-                <rect x={x} y={baseY} width={barW} height={fH}
-                  fill={COLORS.failures} opacity={0.9} rx={0.4} />
-              )}
-              {/* No inline SVG labels — rendered as HTML below */}
-            </g>
-          )
-        })}
-
         {/* Baseline */}
-        <line x1={0} y1={padT + chartH} x2={100} y2={padT + chartH}
-          stroke="rgba(255,255,255,0.1)" strokeWidth={0.3} />
+        <line
+          x1={padL} y1={padT+chartH}
+          x2={W-padR} y2={padT+chartH}
+          stroke="rgba(255,255,255,0.08)" strokeWidth={0.8} />
       </svg>
-      {/* X-axis labels — HTML for crisp rendering */}
-      <div style={{ display:'flex', justifyContent:'space-between', padding:'3px 0 0', overflow:'hidden' }}>
-        {data.filter((_, i) => i % labelEvery === 0).map((d, i) => (
-          <span key={i} style={{ fontSize:10, color:'rgba(255,255,255,0.6)', lineHeight:1 }}>{d.hour}</span>
-        ))}
+
+      {/* X-axis labels */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        padding: '2px 8px 0', overflow: 'hidden',
+      }}>
+        {data
+          .map((d, i) => ({ d, i }))
+          .filter(({ i }) => i % labelEvery === 0)
+          .map(({ d, i }) => (
+            <span key={i} style={{ fontSize:10, color:'rgba(255,255,255,0.45)', lineHeight:1 }}>
+              {d.hour}
+            </span>
+          ))
+        }
       </div>
     </div>
   )
@@ -111,15 +127,15 @@ export function ActivityChart({ data, height = 140 }: Props) {
 
 export function ActivityLegend() {
   return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+    <div style={{ display:'flex', gap:14, alignItems:'center' }}>
       {[
         { color: COLORS.backups,      label: 'Backups' },
         { color: COLORS.restoreTests, label: 'Restore Tests' },
         { color: COLORS.failures,     label: 'Failures' },
       ].map(({ color, label }) => (
-        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: 'block' }} />
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{label}</span>
+        <div key={label} style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ width:10, height:2, borderRadius:1, background:color, display:'block' }} />
+          <span style={{ fontSize:11, color:'var(--text-muted)' }}>{label}</span>
         </div>
       ))}
     </div>

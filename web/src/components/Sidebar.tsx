@@ -4,19 +4,19 @@ const NAV = [
   {
     label: 'OPERATIONS',
     links: [
-      { to: '/',              label: 'Overview',      icon: '▦' },
+      { to: '/',              label: 'Overview',      icon: '⊞' },
       { to: '/systems',       label: 'Systems',       icon: '🖥' },
-      { to: '/agents',        label: 'Agents',        icon: '⬡' },
-      { to: '/policies',      label: 'Policies',      icon: '▤' },
-      { to: '/jobs',          label: 'Jobs',          icon: '⊙' },
+      { to: '/agents',        label: 'Agents',        icon: '◉' },
+      { to: '/policies',      label: 'Policies',      icon: '≡' },
+      { to: '/jobs',          label: 'Jobs',          icon: '↻' },
     ],
   },
   {
     label: 'RECOVERY',
     links: [
-      { to: '/snapshots',     label: 'Snapshots',     icon: '◫' },
+      { to: '/snapshots',     label: 'Snapshots',     icon: '⬡' },
       { to: '/restore-tests', label: 'Restore Tests', icon: '✓' },
-      { to: '/repositories',  label: 'Repositories',  icon: '▭' },
+      { to: '/repositories',  label: 'Repositories',  icon: '▤' },
     ],
   },
   {
@@ -24,7 +24,7 @@ const NAV = [
     links: [
       { to: '/evidence',      label: 'Evidence',      icon: '🔍' },
       { to: '/alerts',        label: 'Alerts',        icon: '🔔' },
-      { to: '/reports',       label: 'Reports',       icon: '📄', soon: true },
+      { to: '/reports',       label: 'Reports',       icon: '📊', soon: true },
     ],
   },
   {

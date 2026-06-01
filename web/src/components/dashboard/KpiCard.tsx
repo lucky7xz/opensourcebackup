@@ -1,35 +1,48 @@
 import { Sparkline } from '../Sparkline'
 
 interface Props {
-  icon:      React.ReactNode
-  label:     string
-  value:     string
-  sub?:      string
-  color?:    string
-  warn?:     boolean
+  icon:       React.ReactNode
+  label:      string
+  value:      string
+  sub?:       string
+  color?:     string
+  warn?:      boolean
   sparkData?: number[]
-  sparkColor?: string
-  trend?:    string   // e.g. "▲ 3 since yesterday"
-  trendUp?:  boolean  // green if true, red if false
+  sparkColor?:string
+  trend?:     string
+  trendUp?:   boolean
 }
 
 export function KpiCard({ icon, label, value, sub, color = 'var(--text)', warn, sparkData, sparkColor, trend, trendUp }: Props) {
+  const borderColor = warn ? 'rgba(239,68,68,0.3)' : 'var(--border)'
+
   return (
-    <div className="dash-card" style={s.card}>
-      <div style={s.top}>
-        <div style={s.iconWrap}>{icon}</div>
+    <div style={{ ...s.card, borderColor }}>
+      {/* Header */}
+      <div style={s.header}>
+        <span style={s.iconWrap}>{icon}</span>
         <span style={s.label}>{label}</span>
       </div>
-      <div style={{ ...s.value, color: warn ? 'var(--error)' : color }}>{value}</div>
+
+      {/* Value */}
+      <div style={{ ...s.value, color: warn ? 'var(--error)' : color }}>
+        {value}
+      </div>
+
+      {/* Sub text */}
       {sub && <div style={s.sub}>{sub}</div>}
+
+      {/* Sparkline */}
       {sparkData && sparkData.length > 1 && (
-        <div style={s.spark}>
-          <Sparkline data={sparkData} width={100} height={24} color={sparkColor ?? color} filled />
+        <div style={s.sparkWrap}>
+          <Sparkline data={sparkData} width={100} height={26} color={sparkColor ?? color} filled />
         </div>
       )}
+
+      {/* Trend */}
       {trend && (
-        <div style={{ ...s.trend, color: trendUp ? 'var(--success)' : trendUp === false ? 'var(--error)' : 'var(--text-muted)' }}>
-          {trend}
+        <div style={{ ...s.trend, color: trendUp === true ? 'var(--success)' : trendUp === false ? 'var(--error)' : 'var(--text-muted)' }}>
+          {trendUp === true ? '▲' : trendUp === false ? '▼' : ''} {trend}
         </div>
       )}
     </div>
@@ -37,12 +50,20 @@ export function KpiCard({ icon, label, value, sub, color = 'var(--text)', warn, 
 }
 
 const s: Record<string, React.CSSProperties> = {
-  card:    { padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 },
-  top:     { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 },
-  iconWrap:{ fontSize: 18, lineHeight: 1, flexShrink: 0 },
-  label:   { fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' },
-  value:   { fontSize: 32, fontWeight: 800, lineHeight: 1.1 },
-  sub:     { fontSize: 12, color: 'var(--text-muted)', marginTop: 2 },
-  spark:   { marginTop: 8 },
-  trend:   { fontSize: 11, marginTop: 4, fontWeight: 500 },
+  card:     {
+    background: 'linear-gradient(160deg, var(--bg-card-soft) 0%, var(--bg-card) 100%)',
+    border: '1px solid',
+    borderRadius: 14,
+    padding: '16px 18px',
+    display: 'flex', flexDirection: 'column', gap: 3,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
+    minWidth: 0,
+  },
+  header:   { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 },
+  iconWrap: { fontSize: 17, lineHeight: 1, flexShrink: 0, opacity: 0.85 },
+  label:    { fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.12em' },
+  value:    { fontSize: 30, fontWeight: 800, lineHeight: 1.1, letterSpacing: '-0.5px' },
+  sub:      { fontSize: 11, color: 'var(--text-muted)', marginTop: 1 },
+  sparkWrap:{ marginTop: 6 },
+  trend:    { fontSize: 10, marginTop: 3, fontWeight: 600, letterSpacing: '0.03em' },
 }
