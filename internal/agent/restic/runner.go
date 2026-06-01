@@ -16,11 +16,19 @@ import (
 
 // BackupOptions configures a restic backup run.
 type BackupOptions struct {
+	Repo               string
+	Password           string
+	Includes           []string
+	Excludes           []string
+	Tags               []string
+	BandwidthLimitKbps int // 0 = unlimited; passed as --limit-upload N
+}
+
+// VerifyOptions configures a restic check run.
+type VerifyOptions struct {
 	Repo     string
 	Password string
-	Includes []string
-	Excludes []string
-	Tags     []string
+	ReadData bool // --read-data: verify actual file contents (slow but thorough)
 }
 
 // BackupResult holds the parsed output of a successful restic backup.
@@ -190,6 +198,21 @@ func (r *Runner) initRepo(ctx context.Context, opts BackupOptions) error {
 	return nil
 }
 
+// Verify runs restic check to verify repository integrity without a full restore.
+func (r *Runner) Verify(ctx context.Context, opts VerifyOptions) error {
+	args := []string{"check"}
+	if opts.ReadData {
+		args = append(args, "--read-data")
+	}
+	cmd := exec.CommandContext(ctx, r.bin, append([]string{"-r", opts.Repo}, args...)...)
+	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+opts.Password)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("restic check: %w — %s", err, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
 func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResult, error) {
 	args := append([]string{"backup", "--json"}, opts.Includes...)
 	for _, ex := range opts.Excludes {
@@ -197,6 +220,9 @@ func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResu
 	}
 	for _, tag := range opts.Tags {
 		args = append(args, "--tag", tag)
+	}
+	if opts.BandwidthLimitKbps > 0 {
+		args = append(args, "--limit-upload", fmt.Sprintf("%d", opts.BandwidthLimitKbps))
 	}
 
 	cmd := r.cmd(ctx, opts, args...)

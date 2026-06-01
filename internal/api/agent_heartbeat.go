@@ -37,10 +37,16 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// _ = h.auditStore.Append(r.Context(), audit.Entry{...})
 	_ = audit.ActionCreate // keep import used
 
-	// Return server timestamp — agent can use it to detect clock skew.
+	// Return server timestamp + current recommended agent version
+	// Agent compares this to its own version and logs if update available.
+	const currentAgentVersion = "v0.1.0"
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     "ok",
-		"server_time": now.Format(time.RFC3339),
-		"ip_hash":    security.ClientIPHashed(r),
+		"status":                "ok",
+		"server_time":           now.Format(time.RFC3339),
+		"ip_hash":               security.ClientIPHashed(r),
+		"recommended_version":   currentAgentVersion,
+		"update_available":      false, // set true when new version released
+		"update_download_url":   "",
 	})
 }

@@ -90,9 +90,16 @@ type ScheduleConfig struct {
 	// What to do if a scheduled backup is missed
 	IfMissed string `json:"if_missed"` // "run_asap" | "skip"
 
-	// Separate schedules for restore tests and retention/prune
+	// Separate schedules for restore tests, retention/prune, and verify
 	RestoreTestCron string `json:"restore_test_cron"`
 	RetentionCron   string `json:"retention_cron"`
+	VerifyCron      string `json:"verify_cron"`
+	VerifyFull      bool   `json:"verify_full"` // --read-data
+}
+
+// AdvancedConfig holds performance and auto-update settings.
+type AdvancedConfig struct {
+	BandwidthLimitKbps int  `json:"bandwidth_limit_kbps"` // 0 = unlimited
 }
 
 type BackupPolicy struct {
@@ -102,6 +109,7 @@ type BackupPolicy struct {
 	Excludes       []string
 	Schedule       *string       // legacy cron field — use ScheduleConfig.Cron for new code
 	ScheduleConfig ScheduleConfig
+	Advanced       AdvancedConfig
 	Retention      map[string]any
 	RetentionPlan  RetentionPlan
 	Engine         string

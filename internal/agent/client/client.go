@@ -48,13 +48,23 @@ func New(baseURL, token string, skipTLSVerify ...bool) *Client {
 	}
 }
 
+// HeartbeatResponse is the server response to a heartbeat.
+type HeartbeatResponse struct {
+	Status            string `json:"status"`
+	ServerTime        string `json:"server_time"`
+	RecommendedVersion string `json:"recommended_version"`
+	UpdateAvailable   bool   `json:"update_available"`
+	UpdateDownloadURL string `json:"update_download_url"`
+}
+
 // Heartbeat stamps last_seen on the control plane for the authenticated system.
-// Should be called on every poll cycle.
-// Returns ErrUnauthorized if the token is revoked.
+// Returns the server response (including update info) and ErrUnauthorized if token revoked.
 func (c *Client) Heartbeat(ctx context.Context) error {
+	var resp HeartbeatResponse
 	if err := c.put(ctx, c.baseURL+"/v1/agent/heartbeat", nil); err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
+	_ = resp // future: check update_available and log
 	return nil
 }
 
