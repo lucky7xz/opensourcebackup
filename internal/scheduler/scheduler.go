@@ -1,3 +1,12 @@
+// Package scheduler dispatches backup, restore-test, and retention jobs
+// according to per-policy cron schedules.
+//
+// Three schedule types per policy:
+//   - Backup schedule      → creates a pending BackupJob
+//   - Restore-test schedule → creates a pending RestoreTest for the latest snapshot
+//   - Retention schedule   → creates a pending retention BackupJob
+//
+// All schedules are timezone-aware via IANA timezone strings.
 package scheduler
 
 import (
@@ -7,29 +16,30 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
 )
 
 // PolicyChangeNotifier is implemented by the Scheduler.
-// The API handler calls PoliciesChanged after any policy mutation so that
-// the scheduler picks up the new state without a restart.
 type PolicyChangeNotifier interface {
 	PoliciesChanged(ctx context.Context)
 }
 
-// Scheduler dispatches backup jobs according to policy cron schedules.
+// Scheduler dispatches jobs according to policy cron schedules.
 type Scheduler struct {
-	policies catalog.PolicyStore
-	jobs     catalog.JobStore
-	log      *slog.Logger
+	policies     catalog.PolicyStore
+	jobs         catalog.JobStore
+	snapshots    catalog.SnapshotStore
+	restoreTests catalog.RestoreTestStore
+	log          *slog.Logger
 
 	mu   sync.Mutex
 	cron *cron.Cron
 }
 
-// New creates a Scheduler. Call Start to activate it.
+// New creates a Scheduler. Pass nil for snapshots/restoreTests to disable those schedule types.
 func New(policies catalog.PolicyStore, jobs catalog.JobStore, log *slog.Logger) *Scheduler {
 	return &Scheduler{
 		policies: policies,
@@ -39,13 +49,19 @@ func New(policies catalog.PolicyStore, jobs catalog.JobStore, log *slog.Logger) 
 	}
 }
 
+// WithStores adds optional stores for restore-test and retention scheduling.
+func (s *Scheduler) WithStores(snapshots catalog.SnapshotStore, restoreTests catalog.RestoreTestStore) *Scheduler {
+	s.snapshots = snapshots
+	s.restoreTests = restoreTests
+	return s
+}
+
 // Start loads all scheduled policies, registers cron entries, and runs the
-// dead-man's switch checker until ctx is canceled.
+// dead-man's switch until ctx is canceled.
 func (s *Scheduler) Start(ctx context.Context) error {
 	if err := s.reload(ctx); err != nil {
 		return err
 	}
-
 	s.mu.Lock()
 	s.cron.Start()
 	s.mu.Unlock()
@@ -60,8 +76,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	return nil
 }
 
-// PoliciesChanged implements PolicyChangeNotifier.
-// Safe to call from any goroutine — reloads the cron schedule atomically.
+// PoliciesChanged reloads the cron schedule. Safe to call from any goroutine.
 func (s *Scheduler) PoliciesChanged(ctx context.Context) {
 	s.log.Info("scheduler: policies changed — reloading")
 	if err := s.reload(ctx); err != nil {
@@ -69,8 +84,7 @@ func (s *Scheduler) PoliciesChanged(ctx context.Context) {
 	}
 }
 
-// reload stops the current cron, loads all policies from DB,
-// and registers new cron entries. Thread-safe via mutex.
+// reload stops the current cron, loads all policies, and registers entries.
 func (s *Scheduler) reload(ctx context.Context) error {
 	policies, err := s.policies.List(ctx)
 	if err != nil {
@@ -80,28 +94,61 @@ func (s *Scheduler) reload(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Stop old cron and create a fresh one.
 	s.cron.Stop()
-	s.cron = cron.New()
+	s.cron = cron.New(cron.WithSeconds()) // no-op: standard 5-field cron still works
 
 	scheduled := 0
 	for _, p := range policies {
-		if p.Schedule == nil || *p.Schedule == "" {
-			continue
+		pol := p // capture
+		loc := locationFor(pol.ScheduleConfig.Timezone)
+
+		// ── Backup schedule ───────────────────────────────────────────────────
+
+		backupCron := pol.ScheduleConfig.Cron
+		if backupCron == "" && pol.Schedule != nil {
+			backupCron = *pol.Schedule
 		}
-		pol := p // capture for closure
-		if _, err := s.cron.AddFunc(*pol.Schedule, func() {
-			s.dispatchJob(context.Background(), pol)
-		}); err != nil {
-			s.log.Warn("invalid cron schedule — skipping policy",
-				"policy_id", pol.ID,
-				"policy_name", pol.Name,
-				"schedule", *pol.Schedule,
-				"error", err,
-			)
-			continue
+		if backupCron != "" {
+			expr := withLocation(backupCron, loc)
+			if _, err := s.cron.AddFunc(expr, func() {
+				s.dispatchBackup(context.Background(), pol)
+			}); err != nil {
+				s.log.Warn("invalid backup cron — skipping",
+					"policy", pol.Name, "cron", backupCron, "error", err)
+			} else {
+				scheduled++
+			}
 		}
-		scheduled++
+
+		// ── Restore-test schedule ────────────────────────────────────────────
+
+		if pol.ScheduleConfig.RestoreTestCron != "" && s.restoreTests != nil {
+			expr := withLocation(pol.ScheduleConfig.RestoreTestCron, loc)
+			if _, err := s.cron.AddFunc(expr, func() {
+				s.dispatchRestoreTest(context.Background(), pol)
+			}); err != nil {
+				s.log.Warn("invalid restore-test cron — skipping",
+					"policy", pol.Name, "cron", pol.ScheduleConfig.RestoreTestCron, "error", err)
+			} else {
+				s.log.Debug("restore-test schedule registered",
+					"policy", pol.Name, "cron", pol.ScheduleConfig.RestoreTestCron)
+			}
+		}
+
+		// ── Retention schedule ────────────────────────────────────────────────
+
+		if pol.ScheduleConfig.RetentionCron != "" && pol.RetentionPlan.HasRules() {
+			expr := withLocation(pol.ScheduleConfig.RetentionCron, loc)
+			if _, err := s.cron.AddFunc(expr, func() {
+				s.dispatchRetention(context.Background(), pol)
+			}); err != nil {
+				s.log.Warn("invalid retention cron — skipping",
+					"policy", pol.Name, "cron", pol.ScheduleConfig.RetentionCron, "error", err)
+			} else {
+				s.log.Debug("retention schedule registered",
+					"policy", pol.Name, "cron", pol.ScheduleConfig.RetentionCron)
+			}
+		}
 	}
 
 	s.cron.Start()
@@ -109,39 +156,124 @@ func (s *Scheduler) reload(ctx context.Context) error {
 	return nil
 }
 
-// dispatchJob creates a pending BackupJob record for the agent to pick up.
-func (s *Scheduler) dispatchJob(ctx context.Context, p catalog.BackupPolicy) {
-	j := &catalog.BackupJob{
-		PolicyID: p.ID,
-		Status:   "pending",
-	}
-	if err := s.jobs.Create(ctx, j); err != nil {
-		s.log.Error("failed to dispatch job",
-			"policy_id", p.ID,
-			"policy_name", p.Name,
-			"error", err,
-		)
+// ── Dispatch functions ─────────────────────────────────────────────────────────
+
+// dispatchBackup creates a pending BackupJob for all systems that recently ran this policy.
+func (s *Scheduler) dispatchBackup(ctx context.Context, p catalog.BackupPolicy) {
+	systems, err := s.systemsForPolicy(ctx, p.ID)
+	if err != nil || len(systems) == 0 {
+		s.log.Warn("backup dispatch: no systems found for policy",
+			"policy_id", p.ID, "policy_name", p.Name)
 		return
 	}
-	s.log.Info("job dispatched",
-		"job_id", j.ID,
-		"policy_id", p.ID,
-		"policy_name", p.Name,
-	)
+	for _, sysID := range systems {
+		j := &catalog.BackupJob{
+			SystemID: sysID,
+			PolicyID: p.ID,
+			Type:     catalog.JobTypeBackup,
+			Status:   "pending",
+		}
+		if err := s.jobs.Create(ctx, j); err != nil {
+			s.log.Error("failed to dispatch backup job",
+				"policy", p.Name, "system_id", sysID, "error", err)
+			continue
+		}
+		s.log.Info("backup job dispatched",
+			"job_id", j.ID, "policy", p.Name, "system_id", sysID)
+	}
 }
+
+// dispatchRestoreTest creates a RestoreTest for the most recent snapshot from this policy.
+func (s *Scheduler) dispatchRestoreTest(ctx context.Context, p catalog.BackupPolicy) {
+	if s.snapshots == nil || s.restoreTests == nil {
+		return
+	}
+	// Find latest snapshot for jobs of this policy
+	latest, err := s.jobs.LatestByPolicyID(ctx, p.ID)
+	if errors.Is(err, catalog.ErrNotFound) || latest == nil {
+		s.log.Warn("restore-test dispatch: no jobs found for policy", "policy", p.Name)
+		return
+	}
+	if err != nil {
+		s.log.Error("restore-test dispatch: job lookup failed", "policy", p.Name, "error", err)
+		return
+	}
+	// Find snapshot for this job
+	snaps, err := s.snapshots.ListByJobID(ctx, latest.ID)
+	if err != nil || len(snaps) == 0 {
+		s.log.Warn("restore-test dispatch: no snapshots for latest job",
+			"policy", p.Name, "job_id", latest.ID)
+		return
+	}
+	snap := snaps[len(snaps)-1] // most recent
+	rt := &catalog.RestoreTest{
+		SnapshotID:   snap.ID,
+		SystemID:     latest.SystemID,
+		RepositoryID: snap.RepositoryID,
+		Status:       "pending",
+	}
+	if err := s.restoreTests.Create(ctx, rt); err != nil {
+		s.log.Error("restore-test dispatch: create failed", "policy", p.Name, "error", err)
+		return
+	}
+	s.log.Info("restore test dispatched",
+		"restore_test_id", rt.ID, "snapshot_id", snap.ID, "policy", p.Name)
+}
+
+// dispatchRetention creates a pending retention job for each system using this policy.
+func (s *Scheduler) dispatchRetention(ctx context.Context, p catalog.BackupPolicy) {
+	systems, err := s.systemsForPolicy(ctx, p.ID)
+	if err != nil || len(systems) == 0 {
+		s.log.Warn("retention dispatch: no systems found for policy",
+			"policy", p.Name)
+		return
+	}
+	for _, sysID := range systems {
+		j := &catalog.BackupJob{
+			SystemID: sysID,
+			PolicyID: p.ID,
+			Type:     catalog.JobTypeRetention,
+			Status:   "pending",
+		}
+		if err := s.jobs.Create(ctx, j); err != nil {
+			s.log.Error("retention job dispatch failed",
+				"policy", p.Name, "system_id", sysID, "error", err)
+			continue
+		}
+		s.log.Info("retention job dispatched",
+			"job_id", j.ID, "policy", p.Name, "system_id", sysID)
+	}
+}
+
+// systemsForPolicy returns distinct system IDs that have run this policy.
+func (s *Scheduler) systemsForPolicy(ctx context.Context, policyID uuid.UUID) ([]uuid.UUID, error) {
+	allJobs, err := s.jobs.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[uuid.UUID]bool)
+	for _, j := range allJobs {
+		if j.PolicyID == policyID && j.Type == catalog.JobTypeBackup {
+			seen[j.SystemID] = true
+		}
+	}
+	out := make([]uuid.UUID, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// ── Dead-man's switch ──────────────────────────────────────────────────────────
 
 func (s *Scheduler) runDeadManSwitch(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.mu.Lock()
-			// Collect current entries to check
-			s.mu.Unlock()
 			s.checkDeadMan(ctx)
 		}
 	}
@@ -154,35 +286,53 @@ func (s *Scheduler) checkDeadMan(ctx context.Context) {
 		return
 	}
 	for _, p := range policies {
-		if p.Schedule == nil || *p.Schedule == "" {
+		backupCron := p.ScheduleConfig.Cron
+		if backupCron == "" && p.Schedule != nil {
+			backupCron = *p.Schedule
+		}
+		if backupCron == "" {
 			continue
 		}
-		interval, err := cronInterval(*p.Schedule)
+		interval, err := cronInterval(backupCron)
 		if err != nil {
 			continue
 		}
 		deadline := time.Now().Add(-time.Duration(float64(interval) * 1.5))
-
 		latest, err := s.jobs.LatestByPolicyID(ctx, p.ID)
 		if errors.Is(err, catalog.ErrNotFound) {
-			s.log.Warn("dead-man: no job ever ran for policy",
-				"policy_id", p.ID,
-				"policy_name", p.Name,
-			)
+			s.log.Warn("dead-man: no job ever ran", "policy", p.Name)
 			continue
 		}
 		if err != nil {
-			s.log.Error("dead-man: query failed", "policy_id", p.ID, "error", err)
+			s.log.Error("dead-man: query failed", "policy", p.ID, "error", err)
 			continue
 		}
 		if latest.CreatedAt.Before(deadline) {
-			s.log.Warn("dead-man: overdue job detected",
-				"policy_id", p.ID,
-				"policy_name", p.Name,
-				"last_job_at", latest.CreatedAt,
-			)
+			s.log.Warn("dead-man: overdue", "policy", p.Name, "last_job_at", latest.CreatedAt)
 		}
 	}
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+func locationFor(tz string) *time.Location {
+	if tz == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// withLocation prepends "TZ=..." to a cron expression so robfig/cron
+// evaluates it in the correct timezone.
+func withLocation(expr string, loc *time.Location) string {
+	if loc == time.UTC || loc == nil {
+		return expr
+	}
+	return "TZ=" + loc.String() + " " + expr
 }
 
 func cronInterval(expr string) (time.Duration, error) {
