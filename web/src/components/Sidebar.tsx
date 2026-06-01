@@ -34,12 +34,6 @@ const NAV = [
     label: 'COMPLIANCE',
     links: [
       { to: '/evidence',      label: 'Evidence',      icon: '🔍' },
-    ],
-  },
-  {
-    label: 'COMPLIANCE',
-    links: [
-      { to: '/evidence',      label: 'Evidence',      icon: '🔍' },
       { to: '/alerts',        label: 'Alerts',        icon: '🔔' },
     ],
   },
