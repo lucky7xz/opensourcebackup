@@ -103,6 +103,7 @@ export interface BackupPolicy {
 }
 export interface BackupJob {
   ID: string; SystemID: string; PolicyID: string; Status: string
+  Type?: string  // 'backup' | 'retention'
   BytesUploaded?: number; StartedAt?: string; FinishedAt?: string
   ErrorSummary?: string; CreatedAt: string
 }
