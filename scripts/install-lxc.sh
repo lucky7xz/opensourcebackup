@@ -248,11 +248,15 @@ services:
       - '127.0.0.1:6379:6379'
 DCEOF
 
-  # PostgreSQL-Daten: Berechtigungen setzen
+  # PostgreSQL-Daten: Berechtigungen setzen (vor UND nach Docker-Start)
   chown -R 999:999 /var/lib/opensourcebackup/postgres
 
   # Container starten
   docker compose -f /opt/opensourcebackup/docker-compose.yml up -d
+
+  # Nochmal chown — Docker kann Verzeichnis neu anlegen und Permissions überschreiben
+  sleep 2
+  chown -R 999:999 /var/lib/opensourcebackup/postgres
 
   echo 'DOCKER_OK'
 "
