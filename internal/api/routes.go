@@ -110,6 +110,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// ── Audit log (GDPR transparency) ─────────────────────────────────────
 	mux.HandleFunc("GET /v1/audit", h.handleAuditLog)
 
+	// ── Notification channels ─────────────────────────────────────────────
+	mux.HandleFunc("GET /v1/notifications",          h.handleListNotifications)
+	mux.HandleFunc("POST /v1/notifications",         requireRoleFn(auth.RoleOperator, h.handleCreateNotification))
+	mux.HandleFunc("DELETE /v1/notifications/{id}",  requireRoleFn(auth.RoleOperator, h.handleDeleteNotification))
+	mux.HandleFunc("POST /v1/notifications/{id}/test", requireRoleFn(auth.RoleOperator, h.handleTestNotification))
+
 	// ── GDPR — Art. 17 (erasure) + Art. 20 (portability) ─────────────────
 	mux.HandleFunc("GET /v1/gdpr/systems/{id}/export", h.handleGDPRExport)
 	mux.HandleFunc("DELETE /v1/gdpr/systems/{id}/purge", h.handleGDPRPurge)
