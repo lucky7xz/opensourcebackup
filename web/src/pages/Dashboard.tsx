@@ -68,6 +68,15 @@ export function Dashboard() {
 
   const backupSparkline = activity.map(b => b.backups)
   const failSparkline   = activity.map(b => b.failures)
+
+  // Throughput: bytes uploaded in last 24h and 7d
+  const bytes24h = jobs
+    .filter(j => j.Status === 'success' && (Date.now() - new Date(j.CreatedAt).getTime()) < 86_400_000)
+    .reduce((a, j) => a + (j.BytesUploaded ?? 0), 0)
+  const bytes7d = jobs
+    .filter(j => j.Status === 'success' && (Date.now() - new Date(j.CreatedAt).getTime()) < 7 * 86_400_000)
+    .reduce((a, j) => a + (j.BytesUploaded ?? 0), 0)
+  const throughputSparkline = activity.map(b => b.backups * 10) // proxy until per-hour bytes available
   const systemMap       = Object.fromEntries(systems.map(s => [s.ID, s.Hostname]))
   const recentJobs      = [...jobs]
     .sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime())
@@ -118,6 +127,13 @@ export function Dashboard() {
             sparkData={failSparkline} sparkColor="var(--error)"
             warn={failedJobs > 0}
           />
+          <KpiCard icon="📦" label="Data Backed Up (24h)"
+            value={fmtBytes(bytes24h)}
+            sub={bytes7d > 0 ? `${fmtBytes(bytes7d)} in last 7 days` : 'No backups yet'}
+            color="var(--accent-teal)"
+            sparkData={throughputSparkline} sparkColor="var(--accent-teal)"
+            trend={bytes24h > 0 ? 'incremental — deduped' : undefined}
+          />
           <HealthScoreCard score={healthScore} />
         </div>
 
@@ -159,10 +175,18 @@ export function Dashboard() {
   )
 }
 
+function fmtBytes(b: number): string {
+  if (!b) return '—'
+  if (b < 1024) return `${b} B`
+  if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KB`
+  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`
+  return `${(b / 1024 ** 3).toFixed(2)} GB`
+}
+
 const s: Record<string, React.CSSProperties> = {
   page:     { display:'flex', flexDirection:'column', height:'100%', minHeight:0 },
   content:  { flex:1, overflowY:'auto', padding:'18px 22px', display:'flex', flexDirection:'column', gap:14 },
-  kpiRow:   { display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1.6fr', gap:12 },
+  kpiRow:   { display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1.4fr', gap:12 },
   row3:     { display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:14, alignItems:'start' },
   actCard:  { display:'flex', flexDirection:'column' },
   cardHeader:{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'13px 18px 10px', borderBottom:'1px solid var(--border)' },
