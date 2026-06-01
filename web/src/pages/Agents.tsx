@@ -15,7 +15,7 @@ export function Agents() {
   const [step,       setStep]       = useState<Step>('system')
   const [systems,    setSystems]    = useState<System[]>([])
   const [selSystem,    setSelSystem]    = useState<System|null>(null)
-  const [showNewSys,   setShowNewSys]   = useState(false)
+
   const [newHostname,  setNewHostname]  = useState('')
   const [creatingSys,  setCreatingSys]  = useState(false)
   const [platform,   setPlatform]   = useState('')
@@ -38,7 +38,6 @@ export function Agents() {
       const sys = await post<System>('/v1/systems', { Hostname: newHostname.trim(), RiskClass: 'standard' })
       setSystems(prev => [...prev, sys])
       setSelSystem(sys)
-      setShowNewSys(false)
       setNewHostname('')
     } catch { setErr('Could not register system. Is the control plane running?') }
     finally { setCreatingSys(false) }
@@ -475,7 +474,7 @@ const s: Record<string, React.CSSProperties> = {
   emptyHint:    { background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:8, padding:'14px 16px', fontSize:13, color:'var(--text-muted)' },
   newSysToggle: { marginTop:12 },
   newSysBox:    { marginTop:8, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px' },
-  newMachineBox:{ background:'var(--bg)', border:'1px solid var(--accent)', borderRadius:10, padding:'16px', marginBottom:16, borderOpacity:0.3 },
+  newMachineBox:{ background:'var(--bg)', border:'1px solid var(--accent)', borderRadius:10, padding:'16px', marginBottom:16 },
   newSysInput:  { padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
   platformGrid: { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:8 },
   platformCard: { padding:'20px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', textAlign:'center' as const, transition:'all 0.12s' },
