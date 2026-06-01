@@ -150,7 +150,7 @@ export function Dashboard() {
             value={fmtBytes(bytes24h)}
             sub={bytes7d > 0 ? `${fmtBytes(bytes7d)} in last 7 days` : 'No backups yet'}
             color="var(--accent-teal)"
-            sparkData={dailyBackupCounts} sparkColor="var(--accent-teal)"
+            sparkData={backupSparkline} sparkColor="var(--accent-teal)"
             trend={bytes24h > 0 ? 'incremental — deduped' : undefined}
           />
           <HealthScoreCard score={healthScore} />
