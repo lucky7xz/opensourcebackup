@@ -47,9 +47,6 @@ export function ActivityChart({ data, height = 160 }: Props) {
   const xOf = (i: number) => padL + (i / (n - 1)) * chartW
   const yOf = (v: number) => padT + chartH - (v / maxVal) * chartH
 
-  const line = (key: keyof ActivityBucket) =>
-    data.map((d, i) => `${xOf(i).toFixed(1)},${yOf(Number(d[key] ?? 0)).toFixed(1)}`).join(' ')
-
   const area = (key: keyof ActivityBucket, color: string) => {
     const pts = data.map((d, i) => `${xOf(i).toFixed(1)},${yOf(Number(d[key] ?? 0)).toFixed(1)}`)
     const bot = `${xOf(n-1).toFixed(1)},${(padT+chartH).toFixed(1)} ${padL},${(padT+chartH).toFixed(1)}`
