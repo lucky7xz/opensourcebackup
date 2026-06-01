@@ -168,7 +168,7 @@ export function Dashboard() {
         />
 
         {/* Recovery Score — from backend canonical calculation */}
-        <div style={{ ...s.kpiCard, gridColumn: 'span 2', flexDirection: 'row', gap: 20, alignItems: 'center' }}>
+        <div style={{ ...s.kpiCard, flexDirection: 'row', gap: 20, alignItems: 'center' }}>
           {healthScore ? (
             <>
               <div style={{ ...s.scoreRing, borderColor: healthScore.color }}>
