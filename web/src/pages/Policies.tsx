@@ -86,15 +86,14 @@ export function Policies() {
     setRepoID(p.RepositoryID ?? '')
     setIncludes(p.Includes?.length ? p.Includes : [''])
     setExcludes(p.Excludes ?? [])
-    const sc = p.ScheduleConfig ?? {}
     setSchedule({
-      cron:              sc.cron              ?? p.Schedule ?? '',
-      timezone:          sc.timezone          ?? 'Europe/Berlin',
-      window_start:      sc.window_start      ?? '',
-      window_end:        sc.window_end        ?? '',
-      if_missed:         sc.if_missed         ?? 'run_asap',
-      restore_test_cron: sc.restore_test_cron ?? '',
-      retention_cron:    sc.retention_cron    ?? '',
+      cron:              p.ScheduleConfig?.cron              ?? p.Schedule ?? '',
+      timezone:          p.ScheduleConfig?.timezone          ?? 'Europe/Berlin',
+      window_start:      p.ScheduleConfig?.window_start      ?? '',
+      window_end:        p.ScheduleConfig?.window_end        ?? '',
+      if_missed:         p.ScheduleConfig?.if_missed         ?? 'run_asap',
+      restore_test_cron: p.ScheduleConfig?.restore_test_cron ?? '',
+      retention_cron:    p.ScheduleConfig?.retention_cron    ?? '',
     })
     setKeepLast(String(p.RetentionPlan?.KeepLast    ?? 7))
     setKeepDaily(String(p.RetentionPlan?.KeepDaily   ?? 14))
