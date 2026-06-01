@@ -123,7 +123,7 @@ bash <(curl -fsSL ${cpUrl}/scripts/install-agent.sh)`)
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const steps: Step[] = ['system', 'platform', 'config', 'install']
-  const stepLabels = ['System', 'Platform', 'Configure', 'Install']
+  const stepLabels = ['Machine', 'Platform', 'Configure', 'Install']
 
   return (
     <div style={s.page}>
@@ -156,26 +156,49 @@ bash <(curl -fsSL ${cpUrl}/scripts/install-agent.sh)`)
       {/* Step content */}
       <div style={s.card}>
 
-        {/* ── Step 1: System ── */}
+        {/* ── Step 1: Hostname eingeben (System wird automatisch angelegt) ── */}
         {step === 'system' && (
           <>
-            <h2 style={s.stepTitle}>Which system should the agent run on?</h2>
+            <h2 style={s.stepTitle}>On which machine should the agent run?</h2>
             <p style={s.stepSub}>
-              Select a registered system. To add a new system, go to{' '}
-              <a href="/systems" style={{color:'var(--accent)'}}>Systems</a> first.
+              Enter the hostname of the machine — or select an existing one below.
             </p>
 
-            {systems.length === 0 ? (
-              <div style={s.emptyHint}>
-                No systems registered yet.{' '}
-                <a href="/systems" style={{color:'var(--accent)'}}>Go to Systems →</a>{' '}
-                to register your first system.
+            {/* ── Primär: neues System direkt hier anlegen ── */}
+            <div style={s.newMachineBox}>
+              <label style={s.label}>Machine hostname / name</label>
+              <div style={{ display:'flex', gap:8 }}>
+                <input
+                  style={{ ...s.newSysInput, flex:1 }}
+                  placeholder="e.g. cerberus, web-server-01, 192.168.1.50"
+                  value={newHostname}
+                  onChange={e => setNewHostname(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && registerAndSelect()}
+                  autoFocus
+                />
+                <button
+                  onClick={registerAndSelect}
+                  disabled={creatingSys || !newHostname.trim()}
+                  style={s.primary}
+                >
+                  {creatingSys ? '…' : selSystem && selSystem.Hostname === newHostname.trim() ? '✓ Selected' : 'Use this machine'}
+                </button>
               </div>
-            ) : (
+              <div style={{ fontSize:11, color:'var(--text-dim)', marginTop:4 }}>
+                A new system record will be created automatically if it doesn't exist yet.
+              </div>
+            </div>
+
+            {/* ── Sekundär: bestehende Systeme ── */}
+            {systems.length > 0 && (
               <div style={s.section}>
+                <div style={{ fontSize:11, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
+                  Or select an existing machine
+                </div>
                 <div style={s.systemList}>
                   {systems.map(sys => (
-                    <div key={sys.ID} onClick={() => setSelSystem(sys)}
+                    <div key={sys.ID}
+                      onClick={() => { setSelSystem(sys); setNewHostname(sys.Hostname) }}
                       style={{...s.systemItem, ...(selSystem?.ID===sys.ID ? s.systemItemOn : {})}}>
                       <span style={s.sysIcon}>🖥</span>
                       <div>
@@ -185,36 +208,6 @@ bash <(curl -fsSL ${cpUrl}/scripts/install-agent.sh)`)
                       {selSystem?.ID===sys.ID && <span style={s.checkmark}>✓</span>}
                     </div>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {/* Register new system inline */}
-            <div style={s.newSysToggle}>
-              <button onClick={() => { setShowNewSys(v => !v); setErr(null) }} style={s.addBtn}>
-                {showNewSys ? '▲ Cancel' : '+ Enroll Agent'}
-              </button>
-            </div>
-
-            {showNewSys && (
-              <div style={s.newSysBox}>
-                <div style={s.label}>Agent Name / Hostname</div>
-                <div style={{ display:'flex', gap:8 }}>
-                  <input
-                    style={{ ...s.newSysInput, flex:1 }}
-                    placeholder="z.B. web-server-01 oder 192.168.1.10"
-                    value={newHostname}
-                    onChange={e => setNewHostname(e.target.value)}
-                    onKeyDown={e => e.key==='Enter' && registerAndSelect()}
-                    autoFocus
-                  />
-                  <button
-                    onClick={registerAndSelect}
-                    disabled={creatingSys || !newHostname.trim()}
-                    style={s.primary}
-                  >
-                    {creatingSys ? '…' : 'Add'}
-                  </button>
                 </div>
               </div>
             )}
@@ -482,6 +475,7 @@ const s: Record<string, React.CSSProperties> = {
   emptyHint:    { background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:8, padding:'14px 16px', fontSize:13, color:'var(--text-muted)' },
   newSysToggle: { marginTop:12 },
   newSysBox:    { marginTop:8, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px' },
+  newMachineBox:{ background:'var(--bg)', border:'1px solid var(--accent)', borderRadius:10, padding:'16px', marginBottom:16, borderOpacity:0.3 },
   newSysInput:  { padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
   platformGrid: { display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:8 },
   platformCard: { padding:'20px 16px', borderRadius:8, border:'1px solid var(--border)', cursor:'pointer', textAlign:'center' as const, transition:'all 0.12s' },
