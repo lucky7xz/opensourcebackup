@@ -83,8 +83,22 @@ export interface RepositoryHealth {
   LastRestoreTestAt?: string
   LastRetentionAt?:   string
 }
+export interface ScheduleConfig {
+  cron: string; timezone: string
+  window_start: string; window_end: string
+  if_missed: 'run_asap' | 'skip'
+  restore_test_cron: string; retention_cron: string
+}
+
+export interface RetentionPlan {
+  KeepLast: number; KeepDaily: number; KeepWeekly: number
+  KeepMonthly: number; KeepYearly: number
+}
+
 export interface BackupPolicy {
   ID: string; Name: string; Engine: string; Schedule?: string
+  ScheduleConfig?: ScheduleConfig
+  RetentionPlan?: RetentionPlan
   Includes?: string[]; Excludes?: string[]; RepositoryID?: string; CreatedAt: string
 }
 export interface BackupJob {

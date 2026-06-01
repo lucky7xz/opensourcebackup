@@ -76,19 +76,39 @@ func (r RetentionPlan) HasRules() bool {
 		r.KeepMonthly > 0 || r.KeepYearly > 0
 }
 
+// ScheduleConfig holds the full scheduling configuration for a policy.
+// All fields are optional — empty means "not configured".
+type ScheduleConfig struct {
+	// Backup schedule (cron expression, e.g. "0 2 * * *")
+	Cron     string `json:"cron"`
+	Timezone string `json:"timezone"` // IANA, e.g. "Europe/Berlin"
+
+	// Backup window: only run backups between these times (HH:MM)
+	WindowStart string `json:"window_start"` // e.g. "22:00"
+	WindowEnd   string `json:"window_end"`   // e.g. "06:00"
+
+	// What to do if a scheduled backup is missed
+	IfMissed string `json:"if_missed"` // "run_asap" | "skip"
+
+	// Separate schedules for restore tests and retention/prune
+	RestoreTestCron string `json:"restore_test_cron"`
+	RetentionCron   string `json:"retention_cron"`
+}
+
 type BackupPolicy struct {
-	ID           uuid.UUID
-	Name         string
-	Includes     []string
-	Excludes     []string
-	Schedule     *string
-	Retention    map[string]any
-	RetentionPlan RetentionPlan  // typed keep rules — sourced from dedicated columns
-	Engine       string
-	PreHooks     []string
-	PostHooks    []string
-	RepositoryID *uuid.UUID // which repository this policy backs up to
-	CreatedAt    time.Time
+	ID             uuid.UUID
+	Name           string
+	Includes       []string
+	Excludes       []string
+	Schedule       *string       // legacy cron field — use ScheduleConfig.Cron for new code
+	ScheduleConfig ScheduleConfig
+	Retention      map[string]any
+	RetentionPlan  RetentionPlan
+	Engine         string
+	PreHooks       []string
+	PostHooks      []string
+	RepositoryID   *uuid.UUID
+	CreatedAt      time.Time
 }
 
 const (
