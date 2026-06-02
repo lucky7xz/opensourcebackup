@@ -60,6 +60,13 @@ export function Dashboard() {
       setAlerts(((al as any)?.alerts ?? []) as any[])
       setEvidence(ev as any[])
     }).finally(() => setLoading(false))
+
+    // Live-refresh: systems + jobs every 30s so LastSeen / agent status stay current
+    const tick = setInterval(() => {
+      api.systems().then(s => setSystems(s as System[])).catch(() => {})
+      api.jobs().then(j => setJobs(j as BackupJob[])).catch(() => {})
+    }, 30_000)
+    return () => clearInterval(tick)
   }, [])
 
   // ── Derived ───────────────────────────────────────────────────────────────

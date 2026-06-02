@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, duration, timeAgo, type RestoreTest, type Snapshot } from '../api'
+import { api, duration, timeAgo, type RestoreTest, type Snapshot, type BackupRepository } from '../api'
 import { Card, SectionHeader } from '../components/Card'
 import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
@@ -9,28 +9,48 @@ import { Modal } from '../components/Modal'
 export function RestoreTests() {
   const [tests,      setTests]      = useState<RestoreTest[]>([])
   const [snapshots,  setSnapshots]  = useState<Snapshot[]>([])
+  const [repos,      setRepos]      = useState<BackupRepository[]>([])
   const [loading,    setLoading]    = useState(true)
   const [showNew,    setShowNew]    = useState(false)
   const [selSnap,    setSelSnap]    = useState('')
+  const [selRepo,    setSelRepo]    = useState('')  // optional repo override
   const [targetPath, setTargetPath] = useState('')
   const [creating,   setCreating]   = useState(false)
   const [deleteFor,  setDeleteFor]  = useState<RestoreTest|null>(null)
   const [err,        setErr]        = useState<string|null>(null)
 
-  const load = () => Promise.all([api.restoreTests(), api.snapshots()])
-    .then(([t,s]) => { setTests(t); setSnapshots(s) })
+  const load = () => Promise.all([api.restoreTests(), api.snapshots(), api.repositories()])
+    .then(([t,s,r]) => { setTests(t); setSnapshots(s); setRepos(r) })
     .finally(() => setLoading(false))
 
   useEffect(() => { load() }, [])
+
+  // When a snapshot is selected, pre-select its default repository
+  function onSnapChange(snapID: string) {
+    setSelSnap(snapID)
+    if (snapID) {
+      const snap = snapshots.find(s => s.ID === snapID)
+      setSelRepo(snap?.RepositoryID ?? '')
+    } else {
+      setSelRepo('')
+    }
+  }
 
   async function create() {
     if (!selSnap) { setErr('Select a snapshot.'); return }
     setCreating(true); setErr(null)
     try {
-      await api.createRestoreTest(selSnap, targetPath || undefined)
-      setShowNew(false); setSelSnap(''); setTargetPath(''); await load()
+      await api.createRestoreTest(selSnap, targetPath || undefined, selRepo || undefined)
+      setShowNew(false); setSelSnap(''); setSelRepo(''); setTargetPath(''); await load()
     } catch { setErr('Failed to create restore test. Is the snapshot valid?') }
     finally { setCreating(false) }
+  }
+
+  function repoName(id: string): string {
+    const r = repos.find(r => r.ID === id)
+    if (!r) return id.slice(0, 8) + '…'
+    const loc = r.Location.replace(/\\/g, '/').split('/').pop() ?? r.Location
+    return `${r.Type} — ${loc.length > 30 ? '…' + loc.slice(-28) : loc}`
   }
 
   const snapName = (id: string) => {
@@ -102,7 +122,7 @@ export function RestoreTests() {
         <Modal title="New Restore Test" onClose={() => { setShowNew(false); setErr(null) }}>
           <div style={s.field}>
             <label style={s.label}>Snapshot <span style={{color:'var(--error)'}}>*</span></label>
-            <select style={s.select} value={selSnap} onChange={e => setSelSnap(e.target.value)}>
+            <select style={s.select} value={selSnap} onChange={e => onSnapChange(e.target.value)}>
               <option value="">— select snapshot —</option>
               {snapshots.map(sn => (
                 <option key={sn.ID} value={sn.ID}>
@@ -113,10 +133,28 @@ export function RestoreTests() {
             </select>
           </div>
           <div style={s.field}>
-            <label style={s.label}>Target Path <span style={s.hint}>(optional sandbox path)</span></label>
+            <label style={s.label}>
+              Restore from Repository
+              <span style={{fontWeight:400, fontSize:10, color:'var(--text-dim)', marginLeft:6}}>
+                (default: snapshot's own repo)
+              </span>
+            </label>
+            <select style={s.select} value={selRepo} onChange={e => setSelRepo(e.target.value)}>
+              <option value="">— use snapshot's default repository —</option>
+              {repos.map(r => (
+                <option key={r.ID} value={r.ID}>{repoName(r.ID)}</option>
+              ))}
+            </select>
+            {selRepo && selSnap && (
+              <div style={s.repoHint}>
+                {repos.find(r => r.ID === selRepo)?.Location ?? ''}
+              </div>
+            )}
+          </div>
+          <div style={s.field}>
+            <label style={s.label}>Target Path <span style={{fontWeight:400,fontSize:10,color:'var(--text-dim)',marginLeft:6}}>(optional sandbox path)</span></label>
             <input style={s.input} value={targetPath} onChange={e => setTargetPath(e.target.value)}
               placeholder="e.g. C:/tmp/restore-test or /tmp/restore-sandbox" />
-            <div style={s.hint2}>Leave empty — restore runner will use a default sandbox in B14.</div>
           </div>
           {err && <div style={s.errBox}>{err}</div>}
           <div style={s.actions}>
@@ -160,6 +198,7 @@ const s: Record<string,React.CSSProperties> = {
   label:        { display:'block', fontSize:11, fontWeight:700, color:'var(--text-dim)', textTransform:'uppercase' as const, letterSpacing:'0.08em', marginBottom:6 },
   hint:         { fontWeight:400, textTransform:'none' as const, fontSize:10, color:'var(--text-dim)', letterSpacing:0 },
   hint2:        { fontSize:11, color:'var(--text-dim)', marginTop:4 },
+  repoHint:     { fontSize:10, color:'var(--text-dim)', marginTop:4, fontFamily:'var(--font-mono)' },
   select:       { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, cursor:'pointer' },
   input:        { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
   errBox:       { background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.25)', borderRadius:6, padding:'8px 12px', fontSize:13, color:'var(--error)', marginBottom:8 },
