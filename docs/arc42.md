@@ -1,6 +1,6 @@
 # Arc42 — OpensourceBackup Architektur
 
-> Stand: B1–B16 implementiert (Catalog, API, Scheduler, Security, Auth, Agent, Web-UI).
+> Stand: B1–B16 implementiert (Catalog, API, Scheduler, Security, Auth, Agent, Web-UI). Agent läuft auf Windows (cerberus), Linux (192.168.0.72) und FreeBSD/OPNsense (192.168.0.41).
 
 ---
 
@@ -145,6 +145,31 @@ make dev-up + make migrate-up (000001–000009)
 make run         → Control Plane :8080
 cd web && npm run dev → Web-UI :5173
 make run-agent   → Agent (token aus data/agent-token)
+```
+
+### Produktion — aktuelle Infrastruktur
+
+```
+Control Plane
+  Host: 192.168.0.72 (Debian LXC auf Proxmox)
+  Binary: /opt/opensourcebackup/opensourcebackup-server
+  Service: systemd (opensourcebackup.service)
+  Deploy: systemctl stop → cp → systemctl start
+  SSH-Zugang: root@192.168.0.72 via C:\Users\Admin\.ssh\id_ed25519
+
+Agent — cerberus (Windows)
+  Binary: C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe
+  Token: C:\ProgramData\OpenSourceBackup\agent-token
+  Autostart: HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+
+Agent — OPNsense (FreeBSD 14 / OPNsense 26.1.2)
+  Host: 192.168.0.41 (WAN) / 192.168.1.1 (LAN) / 192.168.2.1 (WIFI)
+  Binary: /usr/local/bin/opensourcebackup-agent (FreeBSD amd64)
+  Service: rc.d (/usr/local/etc/rc.d/opensourcebackup)
+  Autostart: /etc/rc.conf.d/opensourcebackup → opensourcebackup_enable="YES"
+  Logs: /var/log/opensourcebackup.log
+  System-ID: 8e390e79-5acb-4ec5-a533-7de4f4e5e339
+  Restic: noch nicht konfiguriert (SMB-Mount + Passwort offen)
 ```
 
 ---
