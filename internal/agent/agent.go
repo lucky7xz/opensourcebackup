@@ -202,8 +202,17 @@ func (a *Agent) executeNextRestoreTest(ctx context.Context) error {
 		return nil
 	}
 
+	// Use the repository that the snapshot actually belongs to, not the
+	// agent's default configured repo — they may differ.
+	repo, err := a.cp.GetRepository(ctx, rt.RepositoryID)
+	if err != nil {
+		log.Error("could not load repository for restore test", "error", err)
+		a.cp.FailRestoreTest(ctx, rt.ID, fmt.Sprintf("repository lookup: %s", err)) //nolint:errcheck
+		return nil
+	}
+
 	result, err := a.runner.Restore(ctx, restic.RestoreOptions{
-		Repo:        a.cfg.ResticRepo,
+		Repo:        repo.Location,
 		Password:    a.cfg.ResticPassword,
 		SnapshotID:  snap.EngineSnapshotID,
 		TargetPath:  target,

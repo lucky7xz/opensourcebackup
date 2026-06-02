@@ -123,17 +123,27 @@ func (s *Scheduler) reload(ctx context.Context) error {
 		}
 
 		// ── Restore-test schedule ────────────────────────────────────────────
+		// If no explicit cron is set but the policy has a backup schedule,
+		// fall back to a weekly test every Sunday at 03:00 UTC.
+		const defaultRestoreTestCron = "0 3 * * 0"
 
-		if pol.ScheduleConfig.RestoreTestCron != "" && s.restoreTests != nil {
-			expr := withLocation(pol.ScheduleConfig.RestoreTestCron, loc)
+		restoreTestCron := pol.ScheduleConfig.RestoreTestCron
+		if restoreTestCron == "" && backupCron != "" {
+			restoreTestCron = defaultRestoreTestCron
+			s.log.Debug("restore-test: no cron configured, using default weekly schedule",
+				"policy", pol.Name, "default_cron", defaultRestoreTestCron)
+		}
+
+		if restoreTestCron != "" && s.restoreTests != nil {
+			expr := withLocation(restoreTestCron, loc)
 			if _, err := s.cron.AddFunc(expr, func() {
 				s.dispatchRestoreTest(context.Background(), pol)
 			}); err != nil {
 				s.log.Warn("invalid restore-test cron — skipping",
-					"policy", pol.Name, "cron", pol.ScheduleConfig.RestoreTestCron, "error", err)
+					"policy", pol.Name, "cron", restoreTestCron, "error", err)
 			} else {
 				s.log.Debug("restore-test schedule registered",
-					"policy", pol.Name, "cron", pol.ScheduleConfig.RestoreTestCron)
+					"policy", pol.Name, "cron", restoreTestCron)
 			}
 		}
 
