@@ -19,6 +19,7 @@
 10. [Restic: executable file not found in \$PATH](#10-restic-executable-file-not-found-in-path)
 11. [CI: Go-Version zu alt](#11-ci-go-version-zu-alt)
 12. [Migration: no change / Spalte fehlt](#12-migration-no-change--spalte-fehlt)
+13. [Agent Windows: sc.exe create haengt sich auf](#13-agent-windows-scexe-create-haengt-sich-auf)
 13. [Proxmox: Disk voll (100%)](#13-proxmox-disk-voll-100)
 14. [Proxmox: Passwort vergessen / kein Login](#14-proxmox-passwort-vergessen--kein-login)
 15. [Windows Agent als Dienst: Service nicht registriert](#15-windows-agent-als-dienst-service-nicht-registriert)
@@ -495,6 +496,51 @@ cd web && npm run build && cp -r dist/. /opt/opensourcebackup/web-ui/ && cd ..
 systemctl restart opensourcebackup
 systemctl status opensourcebackup --no-pager | head -8
 ```
+
+---
+
+---
+
+## 13. Agent Windows: sc.exe create haengt sich auf
+
+**Symptom:**  
+Windows-Dienst wird mit `sc.exe create` angelegt (`Stopped`, StartType `Automatic`), hängt aber beim Start — `Start-Service` kehrt nicht zurück.
+
+**Ursache:**  
+Das Agent-Binary ist eine normale Console-Applikation (Go). Es implementiert **nicht** die Windows Service Control API (`svc.Run()`). Der SCM wartet auf das Service-Ready-Signal — das niemals kommt.
+
+**Loesung — Task Scheduler (empfohlen):**
+
+```powershell
+# Als Administrator:
+schtasks /Create `
+  /TN "OpenSourceBackupAgent" `
+  /TR "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe" `
+  /SC ONSTART `
+  /RU SYSTEM `
+  /RL HIGHEST `
+  /F
+
+schtasks /Run /TN "OpenSourceBackupAgent"
+```
+
+**Loesung — HKCU-Autostart (kein Admin, startet bei Login):**
+
+```powershell
+Set-ItemProperty `
+  -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
+  -Name "OpenSourceBackupAgent" `
+  -Value "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe"
+```
+
+**Umgebungsvariablen systemweit setzen (einmalig als Admin):**
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("OSB_SERVER_URL","http://<server-ip>:8080","Machine")
+[System.Environment]::SetEnvironmentVariable("OSB_TOKEN_FILE","C:\ProgramData\OpenSourceBackup\agent-token","Machine")
+```
+
+> Falls zukuenftig nativer Service-Support gewuenscht wird: `golang.org/x/sys/windows/svc` im Agent einbinden.
 
 ---
 

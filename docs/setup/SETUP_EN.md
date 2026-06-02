@@ -220,6 +220,56 @@ $env:RESTIC_REPO        = "Z:\BackupFolder"
 .\opensourcebackup-agent.exe
 ```
 
+### Autostart on Windows (runs on every login)
+
+After the agent has enrolled successfully, configure it to start automatically:
+
+```powershell
+# 1. Set environment variables permanently (system-wide, requires Admin once)
+[System.Environment]::SetEnvironmentVariable("OSB_SERVER_URL","http://<server-ip>:8080","Machine")
+[System.Environment]::SetEnvironmentVariable("OSB_TOKEN_FILE","C:\ProgramData\OpenSourceBackup\agent-token","Machine")
+
+# 2. Register autostart for the current user (no Admin required)
+Set-ItemProperty `
+  -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
+  -Name "OpenSourceBackupAgent" `
+  -Value "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe"
+```
+
+The agent starts automatically when the user logs in. To verify:
+
+```powershell
+# Check autostart entry
+Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "OpenSourceBackupAgent"
+
+# Check agent is running
+Get-Process "opensourcebackup-agent" -ErrorAction SilentlyContinue
+```
+
+### Autostart as System Service (starts without login — Admin required)
+
+For servers or machines that run without a logged-in user, register as a scheduled task:
+
+```powershell
+# Run as Administrator:
+schtasks /Create `
+  /TN "OpenSourceBackupAgent" `
+  /TR "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe" `
+  /SC ONSTART `
+  /RU SYSTEM `
+  /RL HIGHEST `
+  /F
+
+# Start immediately
+schtasks /Run /TN "OpenSourceBackupAgent"
+
+# Verify
+schtasks /Query /TN "OpenSourceBackupAgent" /FO LIST
+```
+
+> **Note:** The agent binary does not use the Windows Service Control API.
+> Use Task Scheduler (`ONSTART`, `SYSTEM`) rather than `sc.exe create`.
+
 ## Linux Agent
 
 ```bash

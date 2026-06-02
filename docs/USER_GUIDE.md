@@ -124,6 +124,49 @@ $env:RESTIC_REPO        = "Z:\OpenSourceBackup"  # NAS-Pfad
 .\opensourcebackup-agent.exe
 ```
 
+### Windows Agent — Autostart einrichten
+
+Nach der ersten erfolgreichen Enrollierung den Agent für automatischen Start konfigurieren.
+
+**Option A — Autostart bei Benutzer-Login (kein Admin nötig):**
+
+```powershell
+# Umgebungsvariablen systemweit setzen (einmalig als Admin):
+[System.Environment]::SetEnvironmentVariable("OSB_SERVER_URL","http://<server-ip>:8080","Machine")
+[System.Environment]::SetEnvironmentVariable("OSB_TOKEN_FILE","C:\ProgramData\OpenSourceBackup\agent-token","Machine")
+
+# Autostart-Eintrag fuer aktuellen Benutzer (kein Admin):
+Set-ItemProperty `
+  -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
+  -Name "OpenSourceBackupAgent" `
+  -Value "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe"
+```
+
+Startet automatisch bei jedem Windows-Login. Prüfen:
+
+```powershell
+Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "OpenSourceBackupAgent"
+Get-Process "opensourcebackup-agent" -ErrorAction SilentlyContinue
+```
+
+**Option B — Task Scheduler (startet auch ohne Login, empfohlen fuer Server):**
+
+```powershell
+# Als Administrator ausfuehren:
+schtasks /Create `
+  /TN "OpenSourceBackupAgent" `
+  /TR "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe" `
+  /SC ONSTART `
+  /RU SYSTEM `
+  /RL HIGHEST `
+  /F
+
+schtasks /Run /TN "OpenSourceBackupAgent"
+```
+
+> **Hinweis:** Das Agent-Binary unterstuetzt keine Windows Service Control API (`sc.exe create` haengt sich auf).
+> Immer Task Scheduler verwenden.
+
 ### Alternative: Direkt auf Proxmox-Host
 
 Das Script läuft auch direkt auf dem Proxmox-Host (Debian 12), ist aber für Produktion nicht empfohlen (teilt das OS mit Proxmox).
