@@ -211,12 +211,19 @@ func (a *Agent) executeNextRestoreTest(ctx context.Context) error {
 		return nil
 	}
 
+	// If the user explicitly set a custom target path, skip the RestoreRoot
+	// sandbox constraint — the user knows where they want to restore.
+	restoreRoot := root
+	if rt.TargetPath != nil && *rt.TargetPath != "" {
+		restoreRoot = ""
+	}
+
 	result, err := a.runner.Restore(ctx, restic.RestoreOptions{
 		Repo:        repo.Location,
 		Password:    a.cfg.ResticPassword,
 		SnapshotID:  snap.EngineSnapshotID,
 		TargetPath:  target,
-		RestoreRoot: root,
+		RestoreRoot: restoreRoot,
 	})
 	if err != nil {
 		log.Error("restore test failed", "error", err)

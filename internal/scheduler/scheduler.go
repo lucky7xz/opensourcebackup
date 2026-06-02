@@ -69,6 +69,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	s.mu.Unlock()
 
 	go s.runDeadManSwitch(ctx)
+	go s.runStaleTestCleaner(ctx)
 
 	<-ctx.Done()
 	s.mu.Lock()
@@ -356,6 +357,61 @@ func (s *Scheduler) checkDeadMan(ctx context.Context) {
 		if latest.CreatedAt.Before(deadline) {
 			s.log.Warn("dead-man: overdue", "policy", p.Name, "last_job_at", latest.CreatedAt)
 		}
+	}
+}
+
+// ── Stale restore-test cleaner ────────────────────────────────────────────────
+
+// runStaleTestCleaner periodically marks restore tests that have been
+// "running" for too long as failed. Protects against agent crashes or
+// network partitions leaving tests stuck in running state forever.
+func (s *Scheduler) runStaleTestCleaner(ctx context.Context) {
+	const staleAfter  = 30 * time.Minute
+	const checkEvery  = 10 * time.Minute
+	ticker := time.NewTicker(checkEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.cleanStaleRestoreTests(ctx, staleAfter)
+		}
+	}
+}
+
+func (s *Scheduler) cleanStaleRestoreTests(ctx context.Context, staleAfter time.Duration) {
+	if s.restoreTests == nil {
+		return
+	}
+	tests, err := s.restoreTests.List(ctx)
+	if err != nil {
+		s.log.Error("stale-cleaner: failed to list restore tests", "error", err)
+		return
+	}
+	deadline := time.Now().Add(-staleAfter)
+	cleaned := 0
+	for _, rt := range tests {
+		if rt.Status != "running" {
+			continue
+		}
+		startedAt := rt.UpdatedAt // UpdatedAt is set when status → running
+		if startedAt.After(deadline) {
+			continue
+		}
+		reason := fmt.Sprintf("timed out after %s — agent may have crashed or lost connection", staleAfter)
+		rt.Status = "failed"
+		rt.ErrorSummary = &reason
+		if err := s.restoreTests.Update(ctx, &rt); err != nil {
+			s.log.Error("stale-cleaner: update failed", "id", rt.ID, "error", err)
+			continue
+		}
+		s.log.Warn("stale-cleaner: marked restore test as failed",
+			"id", rt.ID, "running_since", startedAt)
+		cleaned++
+	}
+	if cleaned > 0 {
+		s.log.Info("stale-cleaner: cleaned up stale tests", "count", cleaned)
 	}
 }
 
