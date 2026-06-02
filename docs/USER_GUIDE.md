@@ -167,6 +167,53 @@ schtasks /Run /TN "OpenSourceBackupAgent"
 > **Hinweis:** Das Agent-Binary unterstuetzt keine Windows Service Control API (`sc.exe create` haengt sich auf).
 > Immer Task Scheduler verwenden.
 
+### Schritt 6 — Agent installieren (FreeBSD / OPNsense)
+
+Für OPNsense und andere FreeBSD-Systeme wird ein FreeBSD-spezifisches Binary benötigt (CGO_ENABLED=0, GOOS=freebsd).
+
+```sh
+# 1. Binary auf den Router übertragen (z.B. via SCP)
+scp opensourcebackup-agent-freebsd root@192.168.0.41:/usr/local/bin/opensourcebackup-agent
+ssh root@192.168.0.41 chmod +x /usr/local/bin/opensourcebackup-agent
+
+# 2. rc.d Service-Datei anlegen
+cat > /usr/local/etc/rc.d/opensourcebackup << 'EOF'
+#!/bin/sh
+# PROVIDE: opensourcebackup
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="opensourcebackup"
+rcvar="opensourcebackup_enable"
+command="/usr/local/bin/opensourcebackup-agent"
+pidfile="/var/run/${name}.pid"
+
+load_rc_config $name
+run_rc_command "$1"
+EOF
+chmod +x /usr/local/etc/rc.d/opensourcebackup
+
+# 3. Autostart aktivieren
+echo 'opensourcebackup_enable="YES"' > /etc/rc.conf.d/opensourcebackup
+
+# 4. Umgebungsvariablen setzen (in /etc/rc.conf.d/opensourcebackup ergänzen)
+echo 'opensourcebackup_env="CONTROL_PLANE_URL=http://192.168.0.72:8080 AGENT_TOKEN_FILE=/usr/local/etc/opensourcebackup-token"' >> /etc/rc.conf.d/opensourcebackup
+
+# 5. Enrollment-Token aus der Web-UI holen und eintragen
+echo -n "<enrollment-token>" > /usr/local/etc/opensourcebackup-token
+chmod 600 /usr/local/etc/opensourcebackup-token
+
+# 6. Service starten
+service opensourcebackup start
+
+# Logs
+tail -f /var/log/opensourcebackup.log
+```
+
+> **Hinweis RESTIC_REPO / RESTIC_PASSWORD:** Beide Variablen sind optional — der Agent startet auch ohne sie und sendet Heartbeats. Restic-Backups werden erst ausgeführt wenn beide konfiguriert sind.
+
 ### Alternative: Direkt auf Proxmox-Host
 
 Das Script läuft auch direkt auf dem Proxmox-Host (Debian 12), ist aber für Produktion nicht empfohlen (teilt das OS mit Proxmox).

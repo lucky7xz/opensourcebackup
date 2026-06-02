@@ -74,6 +74,75 @@ cp .env.example .env.local
 # .env.local befüllen — niemals in VCS committen
 ```
 
+### Cross-Compilation
+
+```powershell
+# Linux amd64 (Proxmox LXC / Debian)
+$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -ldflags="-s -w" -o osb-server-linux ./cmd/control-plane
+
+# FreeBSD amd64 (OPNsense)
+$env:GOOS="freebsd"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -ldflags="-s -w" -o opensourcebackup-agent-freebsd ./cmd/agent
+
+# Windows amd64
+$env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -ldflags="-s -w" -o opensourcebackup-agent.exe ./cmd/agent
+```
+
+### Agent-Update-Prozess
+
+**cerberus (Windows):**
+```powershell
+# 1. Neues Binary bauen (Windows oder Cross-Compile von Linux/Mac)
+# 2. Alten Prozess beenden
+Stop-Process -Name "opensourcebackup-agent" -Force -ErrorAction SilentlyContinue
+# 3. Binary ersetzen
+Copy-Item opensourcebackup-agent.exe C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe -Force
+# 4. Agent manuell oder via HKCU Run automatisch beim nächsten Login starten
+Start-Process "C:\ProgramData\OpenSourceBackup\opensourcebackup-agent.exe"
+```
+
+**OPNsense (FreeBSD):**
+```sh
+# Via SSH oder OPNsense Console
+service opensourcebackup stop
+scp opensourcebackup-agent-freebsd root@192.168.0.41:/usr/local/bin/opensourcebackup-agent
+chmod +x /usr/local/bin/opensourcebackup-agent
+service opensourcebackup start
+```
+
+**Server (192.168.0.72, systemd):**
+```bash
+# Via SSH (Key: C:\Users\Admin\.ssh\id_ed25519)
+systemctl stop opensourcebackup
+cp osb-server-linux /opt/opensourcebackup/opensourcebackup-server
+systemctl start opensourcebackup
+```
+
+### Agent-Token ohne Web-UI generieren
+
+Falls CSRF oder UI-Problem den normalen Enrollment-Flow blockiert, Token direkt per DB + Python:
+
+```python
+import hashlib, secrets, base64, psycopg2
+
+# Plain-Token generieren (32 random bytes, base64url)
+plain = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b'=').decode()
+token_hash = hashlib.sha256(plain.encode()).hexdigest()
+
+conn = psycopg2.connect("host=localhost dbname=opensourcebackup user=postgres")
+cur = conn.cursor()
+cur.execute(
+    "INSERT INTO agent_tokens (system_id, token_hash) VALUES (%s, %s)",
+    ('<system-uuid>', token_hash)
+)
+conn.commit()
+print("Plain token (in agent-token file):", plain)
+```
+
+Den `plain`-Wert in die Token-Datei des Agents schreiben (kein Zeilenumbruch, Rechte 0600 / auf Windows nur für den jeweiligen User).
+
 ---
 
 ## 2. Branching & Git-Workflow

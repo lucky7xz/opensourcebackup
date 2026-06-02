@@ -42,8 +42,12 @@ func (p *program) run() {
 	p.logger = logger
 
 	controlPlaneURL := requireEnv(logger, "CONTROL_PLANE_URL")
-	resticPassword  := requireEnv(logger, "RESTIC_PASSWORD")
-	resticRepo      := requireEnv(logger, "RESTIC_REPO")
+	resticPassword  := os.Getenv("RESTIC_PASSWORD")
+	resticRepo      := os.Getenv("RESTIC_REPO")
+
+	if resticPassword == "" || resticRepo == "" {
+		logger.Warn("RESTIC_PASSWORD / RESTIC_REPO not set — backup/restore jobs will fail if triggered")
+	}
 
 	restoreRoot := os.Getenv("RESTORE_TEST_ROOT")
 	if restoreRoot == "" {
@@ -189,8 +193,12 @@ func main() {
 
 func runInteractive(logger *slog.Logger) {
 	controlPlaneURL := requireEnv(logger, "CONTROL_PLANE_URL")
-	resticPassword  := requireEnv(logger, "RESTIC_PASSWORD")
-	resticRepo      := requireEnv(logger, "RESTIC_REPO")
+	resticPassword  := os.Getenv("RESTIC_PASSWORD")
+	resticRepo      := os.Getenv("RESTIC_REPO")
+
+	if resticPassword == "" || resticRepo == "" {
+		logger.Warn("RESTIC_PASSWORD / RESTIC_REPO not set — backup/restore jobs will fail if triggered")
+	}
 
 	restoreRoot := os.Getenv("RESTORE_TEST_ROOT")
 	if restoreRoot == "" {
