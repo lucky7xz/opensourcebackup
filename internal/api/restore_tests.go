@@ -24,15 +24,16 @@ func (h *Handler) listRestoreTests(w http.ResponseWriter, r *http.Request) {
 }
 
 // createRestoreTest handles POST /v1/restore-tests.
-// Accepts only snapshot_id and optional target_path.
-// Derives system_id and repository_id from the snapshot chain:
+// Accepts snapshot_id, optional target_path, and optional repository_id override.
+// If repository_id is omitted, falls back to the snapshot's own repository.
 //
-//	snapshot → repository_id
+//	snapshot → repository_id (default)
 //	snapshot.job_id → job.system_id
 func (h *Handler) createRestoreTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		SnapshotID string  `json:"snapshot_id"`
-		TargetPath *string `json:"target_path"`
+		SnapshotID   string  `json:"snapshot_id"`
+		TargetPath   *string `json:"target_path"`
+		RepositoryID string  `json:"repository_id"` // optional override
 	}
 	if err := decode(r, &body); err != nil {
 		handleDecodeError(w, err)
@@ -56,10 +57,26 @@ func (h *Handler) createRestoreTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Repository: use override if provided, otherwise fall back to snapshot's repo
+	repoID := snap.RepositoryID
+	if body.RepositoryID != "" {
+		parsed, parseErr := uuid.Parse(body.RepositoryID)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "repository_id must be a valid UUID")
+			return
+		}
+		// Verify the repository exists
+		if _, repoErr := h.repositories.GetByID(r.Context(), parsed); repoErr != nil {
+			writeError(w, httpStatusForError(repoErr), fmt.Sprintf("repository not found: %s", body.RepositoryID))
+			return
+		}
+		repoID = parsed
+	}
+
 	rt := &catalog.RestoreTest{
 		SnapshotID:   snapshotID,
 		SystemID:     job.SystemID,
-		RepositoryID: snap.RepositoryID,
+		RepositoryID: repoID,
 		Status:       "pending",
 		TargetPath:   body.TargetPath,
 	}

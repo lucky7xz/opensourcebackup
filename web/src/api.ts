@@ -147,8 +147,8 @@ export const api = {
   jobs:         () => get<BackupJob[]>('/v1/jobs'),
   snapshots:      () => get<Snapshot[]>('/v1/snapshots'),
   restoreTests:   () => get<RestoreTest[]>('/v1/restore-tests'),
-  createRestoreTest: (snapshotID: string, targetPath?: string) =>
-    post<RestoreTest>('/v1/restore-tests', { snapshot_id: snapshotID, target_path: targetPath }),
+  createRestoreTest: (snapshotID: string, targetPath?: string, repositoryID?: string) =>
+    post<RestoreTest>('/v1/restore-tests', { snapshot_id: snapshotID, target_path: targetPath, repository_id: repositoryID || undefined }),
   deleteRestoreTest: (id: string) => del(`/v1/restore-tests/${id}`),
   createJob:    (systemID: string, policyID: string) =>
     post<BackupJob>('/v1/jobs', { SystemID: systemID, PolicyID: policyID, Status: 'pending' }),
