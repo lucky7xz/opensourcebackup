@@ -186,7 +186,7 @@ func countFiles(dir string) (int, int64, error) {
 }
 
 func (r *Runner) initRepo(ctx context.Context, opts BackupOptions) error {
-	cmd := r.cmd(ctx, opts, "init")
+	cmd := r.cmd(ctx, opts, "init", "--quiet")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(out), "already") ||
@@ -203,6 +203,9 @@ func (r *Runner) Verify(ctx context.Context, opts VerifyOptions) error {
 	args := []string{"check"}
 	if opts.ReadData {
 		args = append(args, "--read-data")
+	}
+	if opts.Password == "" {
+		args = append(args, "--insecure-no-password")
 	}
 	cmd := exec.CommandContext(ctx, r.bin, append([]string{"-r", opts.Repo}, args...)...)
 	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+opts.Password)
@@ -284,6 +287,9 @@ func isExitStatus(err error, code int) bool {
 
 func (r *Runner) cmd(ctx context.Context, opts BackupOptions, args ...string) *exec.Cmd {
 	all := append([]string{"-r", opts.Repo}, args...)
+	if opts.Password == "" {
+		all = append(all, "--insecure-no-password")
+	}
 	cmd := exec.CommandContext(ctx, r.bin, all...)
 	cmd.Env = append(cmd.Environ(), "RESTIC_PASSWORD="+opts.Password)
 	return cmd
