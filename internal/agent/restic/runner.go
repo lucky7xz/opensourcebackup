@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -62,10 +63,40 @@ type Runner struct {
 
 // New creates a Runner using the given restic binary path.
 func New(bin string) *Runner {
+	return &Runner{bin: resolveResticBin(bin)}
+}
+
+// resolveResticBin turns a possibly empty or relative restic reference into an
+// absolute path. Go's os/exec refuses to run a binary resolved relative to the
+// current directory (exec.ErrDot), which breaks the common product layout where
+// restic.exe sits next to the agent and the working directory is the install
+// dir. Resolving to an absolute path up front avoids that refusal.
+func resolveResticBin(bin string) string {
 	if bin == "" {
 		bin = "restic"
 	}
-	return &Runner{bin: bin}
+	if filepath.IsAbs(bin) {
+		return bin
+	}
+	// Prefer a restic binary bundled next to the agent executable.
+	if exe, err := os.Executable(); err == nil {
+		cand := filepath.Join(filepath.Dir(exe), bin)
+		if runtime.GOOS == "windows" && filepath.Ext(cand) == "" {
+			cand += ".exe"
+		}
+		if _, statErr := os.Stat(cand); statErr == nil {
+			return cand
+		}
+	}
+	// Fall back to PATH; resolve to absolute so a match in the working
+	// directory (exec.ErrDot) is still usable instead of being refused.
+	if p, err := exec.LookPath(bin); (err == nil || errors.Is(err, exec.ErrDot)) && p != "" {
+		if abs, absErr := filepath.Abs(p); absErr == nil {
+			return abs
+		}
+		return p
+	}
+	return bin
 }
 
 // Backup initializes the repository if needed, then runs a backup.
