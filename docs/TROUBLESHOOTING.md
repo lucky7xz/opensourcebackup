@@ -25,6 +25,8 @@
 15. [Windows Agent als Dienst: Service nicht registriert](#15-windows-agent-als-dienst-service-nicht-registriert)
 16. [TypeScript Build-Fehler: unused variables](#16-typescript-build-fehler-unused-variables)
 17. [Vite base-Pfad: Assets laden nicht unter /ui/](#17-vite-base-pfad-assets-laden-nicht-unter-ui)
+18. [Agent: Backups schlagen sofort fehl — "cannot run executable found relative to current directory"](#18-agent-backups-schlagen-sofort-fehl-errdot)
+19. [Windows Agent: Backups stoppen, wenn niemand angemeldet ist](#19-windows-agent-backups-stoppen-wenn-niemand-angemeldet-ist)
 
 ---
 
@@ -540,7 +542,75 @@ Set-ItemProperty `
 [System.Environment]::SetEnvironmentVariable("OSB_TOKEN_FILE","C:\ProgramData\OpenSourceBackup\agent-token","Machine")
 ```
 
-> Falls zukuenftig nativer Service-Support gewuenscht wird: `golang.org/x/sys/windows/svc` im Agent einbinden.
+> Hinweis: Der Agent implementiert die Service-API inzwischen über `kardianos/service`.
+> Siehe auch #18 und #19 für die aktuelle, empfohlene Autostart-Lösung (Scheduled Task als User).
+
+---
+
+## 18. Agent: Backups schlagen sofort fehl — ErrDot
+
+**Symptom:**
+Jobs scheitern in wenigen Millisekunden, im Dashboard/`agent.log`:
+```
+backup failed: restic init: exec: "restic": cannot run executable found relative to current directory
+```
+
+**Ursache:**
+`RESTIC_BIN` war nicht gesetzt → der Agent rief restic mit dem **bloßen Namen**
+`"restic"` auf. Go's `os/exec` verweigert seit Go 1.19 die Ausführung eines
+Binaries, das **relativ zum Arbeitsverzeichnis** aufgelöst wird (`exec.ErrDot`).
+Trat zuverlässig auf, weil `restic.exe` neben dem Agenten im Install-Ordner liegt
+und das Arbeitsverzeichnis genau dieser Ordner ist.
+
+**Lösung (Code, ab 2026-06-06):**
+Der Agent löst restic jetzt selbst auf einen **absoluten Pfad** auf
+(`resolveResticBin` in `internal/agent/restic/runner.go`). Agent neu bauen +
+deployen behebt es dauerhaft — unabhängig von `RESTIC_BIN`.
+
+**Sofort-Workaround (ohne Neubau):** `RESTIC_BIN` absolut setzen und Agent neu starten:
+```powershell
+[System.Environment]::SetEnvironmentVariable("RESTIC_BIN","C:\ProgramData\OpenSourceBackup\restic.exe","Machine")  # als Admin
+Stop-ScheduledTask -TaskName "OpenSourceBackupAgent"
+Get-Process opensourcebackup-agent -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-ScheduledTask -TaskName "OpenSourceBackupAgent"
+```
+
+---
+
+## 19. Windows Agent: Backups stoppen, wenn niemand angemeldet ist
+
+**Symptom:**
+Backups laufen tagelang, dann plötzlich keine neuen Snapshots mehr — obwohl der
+Server erreichbar ist. Nach dem nächsten Login laufen sie wieder.
+
+**Ursache:**
+Der Agent wurde über `HKCU\...\Run` gestartet — das greift **nur beim
+interaktiven User-Login**. Reboot ohne Anmeldung / abgemeldet / Maschine aus →
+kein Agent → keine Backups (still, ohne Fehler).
+
+**Warum kein einfacher LocalSystem-Dienst?**
+Liegt das Repo auf einer **SMB-/Netzwerk-Freigabe** (`\\server\share`), hat ein
+`LocalSystem`-Dienst **kein Netzwerk-Credential** und kommt nicht an die Freigabe.
+
+**Lösung — Windows-Dienst als User (ab 2026-06-07):**
+Der Installer (`scripts/install-agent.ps1`) installiert bei UNC-Repo einen echten
+Windows-Dienst, der **als User-Konto** läuft (StartMode Auto, ohne Login), und
+grantet dem Konto das Recht *Als Dienst anmelden* per LSA. Lokal/Cloud → LocalSystem.
+
+> **Fehler 1069 „Der Dienst konnte wegen einer fehlerhaften Anmeldung nicht
+> gestartet werden":** Das User-Konto hat das Recht *Als Dienst anmelden*
+> (`SeServiceLogonRight`) nicht — Windows grantet es bei `sc create`/kardianos
+> **nicht** automatisch (anders als ein Scheduled Task, der Batch-Logon nutzt).
+> Robuster Fix, der Konto+Passwort setzt **und** das Recht mitgrantet:
+> ```powershell
+> # Als Administrator:
+> sc.exe config OpenSourceBackupAgent obj= ".\Admin" password= "<windows-pw>"
+> sc.exe start  OpenSourceBackupAgent
+> ```
+> Bei erneutem 1069 trotz korrektem Recht: Passwort war falsch getippt.
+
+**Hinweis Logging:** Ein Dienst verwirft stdout. Der Agent loggt daher in die Datei
+aus `AGENT_LOG_FILE` (Machine-Env, z.B. `C:\ProgramData\OpenSourceBackup\agent.log`).
 
 ---
 
