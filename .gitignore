@@ -12,8 +12,10 @@
 vendor/
 
 # Secrets — never commit
+.env
 .env.local
 .env.*.local
+!.env.example
 
 # Editor
 .idea/
@@ -28,9 +30,14 @@ Thumbs.db
 # Build artifacts
 dist/
 bin/
+osb-server-linux
+osb-server-*
 
 # Interne Sicherheitsdokumentation — nicht öffentlich
 docs/security/
+
+# Interne Design-Mockups / Tool-Entwürfe — nicht öffentlich
+tooldesign/
 
 # Internes Entwicklungstagbuch — nicht öffentlich
 docs/dev_journal.md
@@ -39,6 +46,10 @@ docs/dev_journal.html
 # Agent runtime data (tokens, restore test sandboxes)
 data/
 
-# TLS dev certificates — never commit private keys
-certs/*.key
-certs/*.pem
+# TLS certificates & private keys — never commit (any location)
+certs/
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
