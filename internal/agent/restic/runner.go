@@ -100,11 +100,38 @@ func resolveResticBin(bin string) string {
 }
 
 // Backup initializes the repository if needed, then runs a backup.
+//
+// Before backing up it removes stale locks. A crash or hard power-off leaves the
+// previous run's lock behind, which otherwise blocks EVERY future backup with
+// "repository is already locked" — the agent could never recover unattended.
+// Unlock only removes dead/old locks (see Unlock), so a live lock held by
+// another host backing up the same repo is preserved.
 func (r *Runner) Backup(ctx context.Context, opts BackupOptions) (*BackupResult, error) {
+	// Best-effort: if this fails the backup below fails loudly and is logged.
+	_ = r.Unlock(ctx, opts.Repo, opts.Password)
 	if err := r.initRepo(ctx, opts); err != nil {
 		return nil, err
 	}
 	return r.runBackup(ctx, opts)
+}
+
+// Unlock removes stale locks from the repository — locks whose creating process
+// has exited (same host, dead PID) or that are older than restic's stale
+// timeout. It deliberately does NOT use --remove-all: a fresh lock from another
+// host currently backing up the same repository (restic refreshes live locks
+// every few minutes) is therefore left intact.
+func (r *Runner) Unlock(ctx context.Context, repo, password string) error {
+	args := []string{"-r", repo, "unlock"}
+	if password == "" {
+		args = append(args, "--insecure-no-password")
+	}
+	cmd := exec.CommandContext(ctx, r.bin, args...)
+	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+password)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("restic unlock: %w — %s", err, bytes.TrimSpace(out))
+	}
+	return nil
 }
 
 // Restore runs restic restore into a validated sandbox directory and
