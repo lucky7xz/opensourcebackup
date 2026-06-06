@@ -178,13 +178,20 @@ func main() {
 		}
 	}
 
-	// Interactive mode (no args or "run") — run directly with signal handling
-	if len(os.Args) <= 1 || strings.ToLower(os.Args[1]) == "run" {
+	// No args (or "run"): decide between console and service-managed start.
+	//
+	// service.Interactive() is false ONLY when the process was launched by a
+	// service manager (Windows SCM, systemd, rc.d). In that case we must hand
+	// control to svc.Run() so the agent registers with the manager — otherwise
+	// the manager's start request times out and the service is killed.
+	//
+	// When started from a console, a Scheduled Task, or an autostart Run-key,
+	// Interactive() is true and we run in the foreground with signal handling.
+	if service.Interactive() {
 		runInteractive(logger)
 		return
 	}
 
-	// Run as service
 	if err := svc.Run(); err != nil {
 		logger.Error("service run error", "error", err)
 		os.Exit(1)
