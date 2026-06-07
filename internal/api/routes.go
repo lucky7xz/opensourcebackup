@@ -55,6 +55,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/start", h.startAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/complete", h.completeAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/fail", h.failAgentJob)
+	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/progress", h.progressAgentJob)
 	// Snapshot read for restore tests (agent needs engine_snapshot_id)
 	agentMux.HandleFunc("GET /v1/agent/snapshots/{id}", h.getSnapshot)
 	// Restore tests

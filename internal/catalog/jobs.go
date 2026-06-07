@@ -12,7 +12,9 @@ import (
 
 const jobSelect = `
 	SELECT id, system_id, policy_id, type, started_at, finished_at, status,
-	       bytes_scanned, bytes_uploaded, error_summary, raw_output, created_at
+	       bytes_scanned, bytes_uploaded, error_summary, raw_output, created_at,
+	       progress_phase, progress_percent, progress_bytes_done, progress_bytes_total,
+	       progress_files_done, progress_files_total, progress_throughput_bps, last_progress_at
 	FROM backup_jobs`
 
 // JobStore defines data access for the backup_jobs table.
@@ -27,6 +29,12 @@ type JobStore interface {
 	ListPendingRetentionBySystemID(ctx context.Context, systemID uuid.UUID) ([]BackupJob, error)
 	LatestByPolicyID(ctx context.Context, policyID uuid.UUID) (*BackupJob, error)
 	Update(ctx context.Context, j *BackupJob) error
+	// UpdateProgress writes a live progress snapshot (lightweight, called every few
+	// seconds while a backup runs). It touches only the progress_* columns.
+	UpdateProgress(ctx context.Context, id uuid.UUID, p JobProgress) error
+	// FinalizeProgress pins a completed job to 100% so a successful job never
+	// lingers at e.g. 98.7%. Leaves progress untouched for failed/cancelled jobs.
+	FinalizeProgress(ctx context.Context, id uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -141,6 +149,43 @@ func (s *pgJobStore) Update(ctx context.Context, j *BackupJob) error {
 	return nil
 }
 
+func (s *pgJobStore) UpdateProgress(ctx context.Context, id uuid.UUID, p JobProgress) error {
+	tag, err := s.db.pool.Exec(ctx, `
+		UPDATE backup_jobs
+		SET progress_phase=$1, progress_percent=$2,
+		    progress_bytes_done=$3, progress_bytes_total=$4,
+		    progress_files_done=$5, progress_files_total=$6,
+		    progress_throughput_bps=$7, last_progress_at=NOW()
+		WHERE id=$8`,
+		p.Phase, p.Percent, p.BytesDone, p.BytesTotal,
+		p.FilesDone, p.FilesTotal, p.ThroughputBps,
+		pgtype.UUID{Bytes: id, Valid: true},
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *pgJobStore) FinalizeProgress(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.db.pool.Exec(ctx, `
+		UPDATE backup_jobs
+		SET progress_percent=100, last_progress_at=NOW()
+		WHERE id=$1`,
+		pgtype.UUID{Bytes: id, Valid: true},
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *pgJobStore) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := s.db.pool.Exec(ctx, `DELETE FROM backup_jobs WHERE id = $1`,
 		pgtype.UUID{Bytes: id, Valid: true},
@@ -185,6 +230,8 @@ func scanJob(row rowScanner) (*BackupJob, error) {
 		&j.StartedAt, &j.FinishedAt, &j.Status,
 		&j.BytesScanned, &j.BytesUploaded, &j.ErrorSummary, &rawOutput,
 		&j.CreatedAt,
+		&j.ProgressPhase, &j.ProgressPercent, &j.ProgressBytesDone, &j.ProgressBytesTotal,
+		&j.ProgressFilesDone, &j.ProgressFilesTotal, &j.ProgressThroughputBps, &j.LastProgressAt,
 	); err != nil {
 		return nil, err
 	}

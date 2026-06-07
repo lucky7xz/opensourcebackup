@@ -156,6 +156,30 @@ type BackupJob struct {
 	ErrorSummary  *string
 	RawOutput     map[string]any
 	CreatedAt     time.Time
+
+	// Live progress (B_JOB_PROGRESS) — updated while a backup runs. Aggregate
+	// numbers only; no file paths are ever stored (privacy / data minimisation).
+	ProgressPhase         string
+	ProgressPercent       float64 // 0..100
+	ProgressBytesDone     int64
+	ProgressBytesTotal    int64
+	ProgressFilesDone     int
+	ProgressFilesTotal    int
+	ProgressThroughputBps int64
+	LastProgressAt        *time.Time
+}
+
+// JobProgress is a live progress snapshot reported by the agent during a backup.
+// It deliberately carries NO file paths/names (restic's current_files) — only
+// aggregate counters — to keep reporting privacy-safe (DSGVO data minimisation).
+type JobProgress struct {
+	Phase         string  `json:"phase"`
+	Percent       float64 `json:"percent"` // 0..100
+	BytesDone     int64   `json:"bytes_done"`
+	BytesTotal    int64   `json:"total_bytes"`
+	FilesDone     int     `json:"files_done"`
+	FilesTotal    int     `json:"total_files"`
+	ThroughputBps int64   `json:"throughput_bps"`
 }
 
 type Snapshot struct {

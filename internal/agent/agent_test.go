@@ -25,6 +25,7 @@ type stubCP struct {
 	started   []uuid.UUID
 	completed []uuid.UUID
 	failed    []failRecord
+	progress  []catalog.JobProgress
 	listErr   error
 }
 
@@ -58,6 +59,11 @@ func (s *stubCP) CompleteJob(_ context.Context, id uuid.UUID, _ string, _ int64,
 
 func (s *stubCP) FailJob(_ context.Context, id uuid.UUID, reason string) error {
 	s.failed = append(s.failed, failRecord{jobID: id, reason: reason})
+	return nil
+}
+
+func (s *stubCP) ReportProgress(_ context.Context, id uuid.UUID, p catalog.JobProgress) error {
+	s.progress = append(s.progress, p)
 	return nil
 }
 
@@ -209,6 +215,9 @@ func (f *failOnceCP) CompleteJob(ctx context.Context, id uuid.UUID, s string, b 
 }
 func (f *failOnceCP) FailJob(ctx context.Context, id uuid.UUID, r string) error {
 	return f.inner.FailJob(ctx, id, r)
+}
+func (f *failOnceCP) ReportProgress(ctx context.Context, id uuid.UUID, p catalog.JobProgress) error {
+	return f.inner.ReportProgress(ctx, id, p)
 }
 func (f *failOnceCP) GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error) {
 	return f.inner.GetRepository(ctx, id)

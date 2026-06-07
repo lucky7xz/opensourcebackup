@@ -28,6 +28,8 @@ type ControlPlaneClient interface {
 	StartJob(ctx context.Context, jobID uuid.UUID) error
 	CompleteJob(ctx context.Context, jobID uuid.UUID, snapshotID string, bytesUploaded int64, paths []string) error
 	FailJob(ctx context.Context, jobID uuid.UUID, reason string) error
+	// ReportProgress sends a live progress snapshot while a backup runs (B_JOB_PROGRESS).
+	ReportProgress(ctx context.Context, jobID uuid.UUID, p catalog.JobProgress) error
 	// Repository lookup (agent reads location from policy)
 	GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error)
 	// Restore tests
@@ -286,12 +288,45 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 		"repository", repoLocation,
 	)
 
+	// Live progress reporting (B_JOB_PROGRESS): throttle to ~2s and compute
+	// throughput from the byte delta. Best-effort — never fails the backup.
+	var (
+		lastReport time.Time
+		lastBytes  int64
+	)
+	onProgress := func(p restic.Progress) {
+		now := time.Now()
+		if !lastReport.IsZero() && now.Sub(lastReport) < 2*time.Second {
+			return
+		}
+		var bps int64
+		if !lastReport.IsZero() {
+			if dt := now.Sub(lastReport).Seconds(); dt > 0 && p.BytesDone >= lastBytes {
+				bps = int64(float64(p.BytesDone-lastBytes) / dt)
+			}
+		}
+		lastReport = now
+		lastBytes = p.BytesDone
+		if err := a.cp.ReportProgress(ctx, job.ID, catalog.JobProgress{
+			Phase:         p.Phase,
+			Percent:       p.Percent,
+			BytesDone:     p.BytesDone,
+			BytesTotal:    p.TotalBytes,
+			FilesDone:     p.FilesDone,
+			FilesTotal:    p.TotalFiles,
+			ThroughputBps: bps,
+		}); err != nil {
+			log.Debug("report progress failed (best-effort)", "error", err)
+		}
+	}
+
 	result, err := a.runner.Backup(ctx, restic.BackupOptions{
-		Repo:     repoLocation,
-		Password: a.cfg.ResticPassword,
-		Includes: policy.Includes,
-		Excludes: policy.Excludes,
-		Tags:     []string{fmt.Sprintf("policy=%s", policy.ID)},
+		Repo:       repoLocation,
+		Password:   a.cfg.ResticPassword,
+		Includes:   policy.Includes,
+		Excludes:   policy.Excludes,
+		Tags:       []string{fmt.Sprintf("policy=%s", policy.ID)},
+		OnProgress: onProgress,
 	})
 	if err != nil {
 		log.Error("backup failed", "error", err)

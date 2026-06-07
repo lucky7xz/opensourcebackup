@@ -23,6 +23,21 @@ type BackupOptions struct {
 	Excludes           []string
 	Tags               []string
 	BandwidthLimitKbps int // 0 = unlimited; passed as --limit-upload N
+	// OnProgress, if set, is called for each restic progress update during the
+	// backup. Optional (nil = no progress reporting). It carries aggregate
+	// counters only — never file paths.
+	OnProgress func(Progress)
+}
+
+// Progress is a single live progress update parsed from restic's --json output.
+// Deliberately no file paths (restic's current_files is dropped) — privacy.
+type Progress struct {
+	Phase      string  // "backup"
+	Percent    float64 // 0..100
+	BytesDone  int64
+	TotalBytes int64
+	FilesDone  int
+	TotalFiles int
 }
 
 // VerifyOptions configures a restic check run.
@@ -277,6 +292,32 @@ func (r *Runner) Verify(ctx context.Context, opts VerifyOptions) error {
 	return nil
 }
 
+// parseStatusProgress parses a restic --json "status" line into a Progress.
+// ok is false for any non-status or malformed line. It decodes ONLY aggregate
+// counters; restic's current_files (file paths) is never read or returned —
+// privacy / data minimisation (DSGVO).
+func parseStatusProgress(line []byte) (Progress, bool) {
+	var msg struct {
+		MessageType string  `json:"message_type"`
+		PercentDone float64 `json:"percent_done"` // 0..1
+		TotalFiles  int     `json:"total_files"`
+		FilesDone   int     `json:"files_done"`
+		TotalBytes  int64   `json:"total_bytes"`
+		BytesDone   int64   `json:"bytes_done"`
+	}
+	if err := json.Unmarshal(line, &msg); err != nil || msg.MessageType != "status" {
+		return Progress{}, false
+	}
+	return Progress{
+		Phase:      "backup",
+		Percent:    msg.PercentDone * 100, // restic 0..1 → 0..100
+		BytesDone:  msg.BytesDone,
+		TotalBytes: msg.TotalBytes,
+		FilesDone:  msg.FilesDone,
+		TotalFiles: msg.TotalFiles,
+	}, true
+}
+
 func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResult, error) {
 	args := append([]string{"backup", "--json"}, opts.Includes...)
 	for _, ex := range opts.Excludes {
@@ -302,6 +343,12 @@ func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResu
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Bytes()
+		if p, ok := parseStatusProgress(line); ok {
+			if opts.OnProgress != nil {
+				opts.OnProgress(p)
+			}
+			continue
+		}
 		var msg struct {
 			MessageType  string `json:"message_type"`
 			SnapshotID   string `json:"snapshot_id"`
