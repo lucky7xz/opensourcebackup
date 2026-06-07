@@ -68,6 +68,7 @@ func New(cfg Config, cp ControlPlaneClient, log *slog.Logger) *Agent {
 // Returns a non-nil error if the agent token is rejected (re-enrollment required).
 func (a *Agent) Run(ctx context.Context) error {
 	a.log.Info("agent started", "poll_interval", a.cfg.PollInterval)
+	a.log.Info("restic process tuning applied", "mode", restic.ProcessTuningMode())
 
 	ticker := time.NewTicker(a.cfg.PollInterval)
 	defer ticker.Stop()

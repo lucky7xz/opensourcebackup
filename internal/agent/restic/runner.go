@@ -127,6 +127,7 @@ func (r *Runner) Unlock(ctx context.Context, repo, password string) error {
 	}
 	cmd := exec.CommandContext(ctx, r.bin, args...)
 	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+password)
+	tuneResticProcess(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("restic unlock: %w — %s", err, bytes.TrimSpace(out))
@@ -150,6 +151,7 @@ func (r *Runner) Restore(ctx context.Context, opts RestoreOptions) (*RestoreResu
 		"--target", opts.TargetPath,
 	)
 	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+opts.Password)
+	tuneResticProcess(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		outStr := string(out)
@@ -267,6 +269,7 @@ func (r *Runner) Verify(ctx context.Context, opts VerifyOptions) error {
 	}
 	cmd := exec.CommandContext(ctx, r.bin, append([]string{"-r", opts.Repo}, args...)...)
 	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD="+opts.Password)
+	tuneResticProcess(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("restic check: %w — %s", err, bytes.TrimSpace(out))
@@ -350,5 +353,6 @@ func (r *Runner) cmd(ctx context.Context, opts BackupOptions, args ...string) *e
 	}
 	cmd := exec.CommandContext(ctx, r.bin, all...)
 	cmd.Env = append(cmd.Environ(), "RESTIC_PASSWORD="+opts.Password)
+	tuneResticProcess(cmd)
 	return cmd
 }
