@@ -121,6 +121,16 @@ func (c *Client) FailJob(ctx context.Context, jobID uuid.UUID, reason string) er
 	return nil
 }
 
+// ReportProgress sends a live progress snapshot for a running job (B_JOB_PROGRESS).
+// Best-effort: the caller must not fail the backup if this errors.
+func (c *Client) ReportProgress(ctx context.Context, jobID uuid.UUID, p catalog.JobProgress) error {
+	url := fmt.Sprintf("%s/v1/agent/jobs/%s/progress", c.baseURL, jobID)
+	if err := c.put(ctx, url, p); err != nil {
+		return fmt.Errorf("report progress %s: %w", jobID, err)
+	}
+	return nil
+}
+
 // GetRepository returns the repository with the given ID.
 func (c *Client) GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error) {
 	url := fmt.Sprintf("%s/v1/repositories/%s", c.baseURL, id)

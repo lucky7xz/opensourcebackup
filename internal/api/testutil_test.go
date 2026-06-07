@@ -224,6 +224,30 @@ func (s *stubJobStore) Update(_ context.Context, j *catalog.BackupJob) error {
 	return nil
 }
 
+func (s *stubJobStore) UpdateProgress(_ context.Context, id uuid.UUID, p catalog.JobProgress) error {
+	j, ok := s.jobs[id]
+	if !ok {
+		return catalog.ErrNotFound
+	}
+	j.ProgressPhase = p.Phase
+	j.ProgressPercent = p.Percent
+	j.ProgressBytesDone = p.BytesDone
+	j.ProgressBytesTotal = p.BytesTotal
+	j.ProgressFilesDone = p.FilesDone
+	j.ProgressFilesTotal = p.FilesTotal
+	j.ProgressThroughputBps = p.ThroughputBps
+	return nil
+}
+
+func (s *stubJobStore) FinalizeProgress(_ context.Context, id uuid.UUID) error {
+	j, ok := s.jobs[id]
+	if !ok {
+		return catalog.ErrNotFound
+	}
+	j.ProgressPercent = 100
+	return nil
+}
+
 func (s *stubJobStore) Delete(_ context.Context, id uuid.UUID) error {
 	if _, ok := s.jobs[id]; !ok {
 		return catalog.ErrNotFound

@@ -68,6 +68,10 @@ func (h *Handler) completeAgentJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, httpStatusForError(err), err.Error())
 		return
 	}
+	// Pin a successful job to 100% so it never lingers at e.g. 98.7% (best-effort).
+	if err := h.jobs.FinalizeProgress(r.Context(), job.ID); err != nil {
+		h.log.Error("finalize progress", "error", err)
+	}
 
 	// Register snapshot only if policy has a repository
 	policy, err := h.policies.GetByID(r.Context(), job.PolicyID)
@@ -112,6 +116,25 @@ func (h *Handler) failAgentJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
+}
+
+// progressAgentJob handles PUT /v1/agent/jobs/{id}/progress — live progress updates
+// while a backup runs (B_JOB_PROGRESS). Aggregate counters only; no file paths.
+func (h *Handler) progressAgentJob(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.claimJob(w, r)
+	if !ok {
+		return
+	}
+	var p catalog.JobProgress
+	if err := decode(r, &p); err != nil {
+		handleDecodeError(w, err)
+		return
+	}
+	if err := h.jobs.UpdateProgress(r.Context(), job.ID, p); err != nil {
+		writeError(w, httpStatusForError(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // claimJob fetches a job and verifies it belongs to the authenticated system.
