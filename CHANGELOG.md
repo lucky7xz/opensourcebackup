@@ -44,6 +44,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **B_LOWPRIO_RESTIC** — agent-spawned restic runs at lowered CPU priority on
+  Windows (`BELOW_NORMAL_PRIORITY_CLASS`) so a long backup yields to interactive
+  work; no-op on Linux/FreeBSD. Opt out with `AGENT_LOW_PRIORITY_RESTIC=false`
+  (default on). Reduces CPU contention only — no crash-prevention claim.
 - **Restic passwordless repos** — pass `--insecure-no-password` on verify and the
   generic restic command when no password is set; `init --quiet` for clean logs.
 
@@ -299,6 +303,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Hinzugefügt
 
+- **B_LOWPRIO_RESTIC** — vom Agent gestartetes restic läuft unter Windows mit
+  niedrigerer CPU-Priorität (`BELOW_NORMAL_PRIORITY_CLASS`), damit ein langes
+  Backup interaktiver Arbeit weicht; No-op auf Linux/FreeBSD. Abschaltbar per
+  `AGENT_LOW_PRIORITY_RESTIC=false` (Default an). Senkt nur CPU-Konkurrenz —
+  kein Versprechen, Crashes zu verhindern.
 - **Restic ohne Passwort** — `--insecure-no-password` bei Verify und dem generischen
   restic-Aufruf, wenn kein Passwort gesetzt ist; `init --quiet` für saubere Logs.
 
