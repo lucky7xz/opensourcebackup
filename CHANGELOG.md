@@ -12,6 +12,53 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — 2026-06-06
+
+### Fixed — Agent reliability (backups had silently stopped)
+
+- **Restic binary resolution (`exec.ErrDot`)** — backups failed instantly with
+  `restic init: exec: "restic": cannot run executable found relative to current directory`.
+  When `RESTIC_BIN` was unset the agent ran restic by bare name; Go's `os/exec`
+  refuses a binary resolved relative to the current directory. The agent now
+  resolves restic to an **absolute path** (prefers the binary next to the agent,
+  else a PATH lookup made absolute). `internal/agent/restic/runner.go`
+- **Agent autostart only on login** — the Windows agent was started via
+  `HKCU\Run`, so it ran **only while a user was logged in**; backups stopped
+  unnoticed whenever nobody was signed in. It now installs as a real **Windows
+  service** (Automatic start, runs without login, SCM restart-on-crash). For an
+  SMB/UNC repo the service runs **under a user account** (LocalSystem has no
+  network credential); the installer grants that account the *Log on as a
+  service* right via LSA. Local/cloud repos use LocalSystem.
+- **Windows service never started (SCM)** — service start (no args) fell into the
+  interactive path instead of `svc.Run()`. Now branches on `service.Interactive()`
+  so the service registers with the SCM. `cmd/agent/main.go`
+- **Backups dead after a crash (stale lock)** — a crash left the previous run's
+  restic lock behind, blocking every future backup with `repository is already
+  locked` (exit status 1) until cleared by hand. The agent now removes stale
+  locks before each backup (`restic unlock`, stale-only — a live lock from
+  another host on the same repo is preserved). `internal/agent/restic/runner.go`
+- **Agent unobservable as a service** — service stdout is discarded; the agent
+  now writes to `AGENT_LOG_FILE` so job logs survive. `cmd/agent/main.go`
+- **`install-agent.ps1` crashed on Windows PowerShell 5.1** — used the PS7-only
+  `??` operator; replaced so the `irm … | iex` one-liner works on default Windows.
+
+### Added
+
+- **B_LOWPRIO_RESTIC** — agent-spawned restic runs at lowered CPU priority on
+  Windows (`BELOW_NORMAL_PRIORITY_CLASS`) so a long backup yields to interactive
+  work; no-op on Linux/FreeBSD. Opt out with `AGENT_LOW_PRIORITY_RESTIC=false`
+  (default on). Reduces CPU contention only — no crash-prevention claim.
+- **Restic passwordless repos** — pass `--insecure-no-password` on verify and the
+  generic restic command when no password is set; `init --quiet` for clean logs.
+
+### Security / Chore
+
+- **`.gitignore` hardened** — excludes all private/sensitive data: `certs/` fully
+  (+ global `*.key/*.pem/*.crt/*.p12/*.pfx`), `.env` (keeps `.env.example`),
+  `data/` (restore sandboxes), `tooldesign/`, and `osb-server-*` build artifacts.
+
+---
+
 ## [Unreleased] — 2026-06-01 (continued)
 
 ### Added — Productivity & Operations
@@ -219,6 +266,56 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ---
 
 ## [Deutsch]
+
+---
+
+## [Unveröffentlicht] — 2026-06-06
+
+### Behoben — Agent-Zuverlässigkeit (Backups waren still stehen geblieben)
+
+- **Restic-Binary-Auflösung (`exec.ErrDot`)** — Backups schlugen sofort fehl mit
+  `restic init: exec: "restic": cannot run executable found relative to current directory`.
+  Bei nicht gesetztem `RESTIC_BIN` rief der Agent restic mit dem bloßen Namen auf;
+  Go's `os/exec` verweigert ein relativ zum Arbeitsverzeichnis aufgelöstes Binary.
+  Der Agent löst restic jetzt auf einen **absoluten Pfad** auf (bevorzugt das Binary
+  neben dem Agenten, sonst PATH-Lookup absolut gemacht). `internal/agent/restic/runner.go`
+- **Agent-Autostart nur bei Login** — der Windows-Agent wurde über `HKCU\Run`
+  gestartet und lief daher **nur bei angemeldetem User**; Backups blieben unbemerkt
+  stehen, sobald niemand angemeldet war. Er installiert sich jetzt als echter
+  **Windows-Dienst** (StartMode Auto, ohne Login, SCM-Restart bei Crash). Bei einem
+  SMB/UNC-Repo läuft der Dienst **unter einem User-Konto** (LocalSystem hat kein
+  Netzwerk-Credential); der Installer grantet diesem Konto das Recht *Als Dienst
+  anmelden* per LSA. Lokal/Cloud nutzt LocalSystem.
+- **Windows-Dienst startete nie (SCM)** — der Dienst-Start (ohne Argumente) landete
+  im interaktiven Pfad statt in `svc.Run()`. Verzweigt jetzt über
+  `service.Interactive()`, sodass sich der Dienst beim SCM registriert.
+  `cmd/agent/main.go`
+- **Backups tot nach Crash (verwaister Lock)** — ein Crash ließ den restic-Lock des
+  vorigen Laufs liegen → jedes weitere Backup scheiterte mit `repository is already
+  locked` (exit status 1), bis er von Hand entfernt wurde. Der Agent entfernt jetzt
+  vor jedem Backup verwaiste Locks (`restic unlock`, nur stale — ein lebender Lock
+  eines anderen Hosts am selben Repo bleibt erhalten). `internal/agent/restic/runner.go`
+- **Agent als Dienst nicht beobachtbar** — Dienst-stdout wird verworfen; der Agent
+  schreibt jetzt nach `AGENT_LOG_FILE`, damit Job-Logs erhalten bleiben. `cmd/agent/main.go`
+- **`install-agent.ps1` crashte auf Windows PowerShell 5.1** — nutzte den nur in
+  PS7 vorhandenen `??`-Operator; ersetzt, damit der `irm … | iex`-Einzeiler auf
+  Standard-Windows funktioniert.
+
+### Hinzugefügt
+
+- **B_LOWPRIO_RESTIC** — vom Agent gestartetes restic läuft unter Windows mit
+  niedrigerer CPU-Priorität (`BELOW_NORMAL_PRIORITY_CLASS`), damit ein langes
+  Backup interaktiver Arbeit weicht; No-op auf Linux/FreeBSD. Abschaltbar per
+  `AGENT_LOW_PRIORITY_RESTIC=false` (Default an). Senkt nur CPU-Konkurrenz —
+  kein Versprechen, Crashes zu verhindern.
+- **Restic ohne Passwort** — `--insecure-no-password` bei Verify und dem generischen
+  restic-Aufruf, wenn kein Passwort gesetzt ist; `init --quiet` für saubere Logs.
+
+### Sicherheit / Aufräumen
+
+- **`.gitignore` gehärtet** — schließt alle privaten/sensiblen Daten aus: `certs/`
+  komplett (+ global `*.key/*.pem/*.crt/*.p12/*.pfx`), `.env` (`.env.example` bleibt),
+  `data/` (Restore-Sandboxes), `tooldesign/` und `osb-server-*` Build-Artefakte.
 
 ---
 
