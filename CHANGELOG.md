@@ -44,6 +44,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **B_JOB_PROGRESS** — live backup progress: the agent streams restic's progress
+  (percent, bytes, files, throughput) to the control plane via
+  `PUT /v1/agent/jobs/{id}/progress`; `GET /v1/jobs` exposes it. Throttled to ~2s,
+  throughput computed agent-side. **Privacy:** only aggregate counters are stored —
+  restic's `current_files` (paths) is never forwarded. A completed job is pinned
+  to 100%. Migration 000021. Foundation for the live cockpit view.
 - **B_LOWPRIO_RESTIC** — agent-spawned restic runs at lowered CPU priority on
   Windows (`BELOW_NORMAL_PRIORITY_CLASS`) so a long backup yields to interactive
   work; no-op on Linux/FreeBSD. Opt out with `AGENT_LOW_PRIORITY_RESTIC=false`
@@ -303,6 +309,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Hinzugefügt
 
+- **B_JOB_PROGRESS** — Live-Backup-Fortschritt: der Agent streamt restics
+  Fortschritt (Prozent, Bytes, Dateien, Durchsatz) an die Control Plane via
+  `PUT /v1/agent/jobs/{id}/progress`; `GET /v1/jobs` liefert ihn. Gedrosselt auf
+  ~2s, Durchsatz agent-seitig berechnet. **Privacy:** nur Aggregat-Zahlen werden
+  gespeichert — restics `current_files` (Pfade) wird nie weitergereicht. Ein
+  abgeschlossener Job wird auf 100% fixiert. Migration 000021. Grundlage fürs Cockpit.
 - **B_LOWPRIO_RESTIC** — vom Agent gestartetes restic läuft unter Windows mit
   niedrigerer CPU-Priorität (`BELOW_NORMAL_PRIORITY_CLASS`), damit ein langes
   Backup interaktiver Arbeit weicht; No-op auf Linux/FreeBSD. Abschaltbar per
