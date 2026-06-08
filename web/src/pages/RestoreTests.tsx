@@ -5,6 +5,15 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Table } from '../components/Table'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Modal } from '../components/Modal'
+import { assessRestorePath, type PathRisk } from '../lib/pathSafety'
+
+// Colour per advisory path-risk level (design-system functional colours).
+const RISK_COLOR: Record<PathRisk, string> = {
+  empty:   'var(--text-dim)',
+  safe:    'var(--success)',
+  caution: 'var(--warning)',
+  danger:  'var(--error)',
+}
 
 export function RestoreTests() {
   const [tests,      setTests]      = useState<RestoreTest[]>([])
@@ -38,6 +47,10 @@ export function RestoreTests() {
 
   async function create() {
     if (!selSnap) { setErr('Select a snapshot.'); return }
+    if (assessRestorePath(targetPath).risk === 'danger') {
+      setErr('Der Zielpfad ist nicht erlaubt. Lass das Feld leer oder wähle ein Sandbox-Verzeichnis.')
+      return
+    }
     setCreating(true); setErr(null)
     try {
       await api.createRestoreTest(selSnap, targetPath || undefined, selRepo || undefined)
@@ -61,6 +74,10 @@ export function RestoreTests() {
   const total  = snapshots.length
   const tested = snapshots.filter(s => tests.some(t => t.SnapshotID===s.ID && t.Status==='success')).length
   const pct    = total > 0 ? Math.round((tested/total)*100) : 0
+
+  // Advisory target-path safety check (the agent enforces the real boundary).
+  const pathCheck = assessRestorePath(targetPath)
+  const pathBlocked = pathCheck.risk === 'danger'
 
   return (
     <div style={s.page}>
@@ -153,13 +170,27 @@ export function RestoreTests() {
           </div>
           <div style={s.field}>
             <label style={s.label}>Target Path <span style={{fontWeight:400,fontSize:10,color:'var(--text-dim)',marginLeft:6}}>(optional sandbox path)</span></label>
-            <input style={s.input} value={targetPath} onChange={e => setTargetPath(e.target.value)}
-              placeholder="e.g. C:/tmp/restore-test or /tmp/restore-sandbox" />
+            <input
+              style={{ ...s.input, ...(pathBlocked ? s.inputDanger : {}) }}
+              value={targetPath}
+              onChange={e => setTargetPath(e.target.value)}
+              placeholder="leer lassen für automatische Sandbox — oder z. B. C:/tmp/restore-test"
+            />
+            <div style={{ ...s.pathBox, borderColor: RISK_COLOR[pathCheck.risk], color: RISK_COLOR[pathCheck.risk] }}>
+              <span style={s.pathIcon}>
+                {pathCheck.risk === 'danger' ? '⛔' : pathCheck.risk === 'caution' ? '⚠' : pathCheck.risk === 'safe' ? '✓' : 'ℹ'}
+              </span>
+              <span>
+                <strong style={s.pathTitle}>{pathCheck.title}</strong>
+                <span style={s.pathDetail}>{pathCheck.detail}</span>
+              </span>
+            </div>
           </div>
           {err && <div style={s.errBox}>{err}</div>}
           <div style={s.actions}>
             <button onClick={() => { setShowNew(false); setErr(null) }} style={s.cancelBtn}>Cancel</button>
-            <button onClick={create} disabled={creating || !selSnap} style={s.submitBtn}>
+            <button onClick={create} disabled={creating || !selSnap || pathBlocked}
+              style={{ ...s.submitBtn, ...(creating || !selSnap || pathBlocked ? s.submitOff : {}) }}>
               {creating ? 'Creating…' : '✓ Create Restore Test'}
             </button>
           </div>
@@ -201,6 +232,12 @@ const s: Record<string,React.CSSProperties> = {
   repoHint:     { fontSize:10, color:'var(--text-dim)', marginTop:4, fontFamily:'var(--font-mono)' },
   select:       { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, cursor:'pointer' },
   input:        { width:'100%', padding:'8px 11px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, color:'var(--text)', fontSize:13, outline:'none' },
+  inputDanger:  { borderColor:'var(--error)' },
+  pathBox:      { display:'flex', gap:8, alignItems:'flex-start', marginTop:8, padding:'8px 11px', borderRadius:6, border:'1px solid var(--border)', background:'rgba(255,255,255,0.02)', fontSize:11, lineHeight:1.5 },
+  pathIcon:     { flexShrink:0, fontSize:13 },
+  pathTitle:    { display:'block', fontWeight:700, marginBottom:2 },
+  pathDetail:   { display:'block', color:'var(--text-muted)', fontWeight:400 },
+  submitOff:    { opacity:0.4, cursor:'not-allowed' },
   errBox:       { background:'rgba(244,63,94,0.1)', border:'1px solid rgba(244,63,94,0.25)', borderRadius:6, padding:'8px 12px', fontSize:13, color:'var(--error)', marginBottom:8 },
   actions:      { display:'flex', gap:8, justifyContent:'flex-end', paddingTop:16, borderTop:'1px solid var(--border)' },
   cancelBtn:    { padding:'7px 16px', borderRadius:6, background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', fontSize:13, cursor:'pointer' },
