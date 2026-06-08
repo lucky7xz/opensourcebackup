@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+#
+# OpenSourceBackup — pre-push quality gate.
+#
+# Runs automatically before EVERY `git push` (CLI, IDE, or agent-driven).
+# Blocks the push if any check fails. Fast + deterministic — no network, no agents.
+#
+# Checks:
+#   1. Secret / private-data scan on the commits being pushed
+#   2. go vet   (scoped — excludes data/restore-tests build artifacts)
+#   3. go test  (scoped)
+#   4. TypeScript check (only when web/ changed and node_modules exists)
+#
+# Install: scripts/install-hooks.sh  (or git config core.hooksPath scripts/hooks)
+#
+# Bypass for a single emergency push:  git push --no-verify
+# (Use sparingly — the gate exists for a reason.)
+
+set -uo pipefail
+
+RED=$'\033[0;31m'; GRN=$'\033[0;32m'; YLW=$'\033[0;33m'; CYN=$'\033[0;36m'; NC=$'\033[0m'
+fail=0
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s✓%s %s\n'  "$GRN" "$NC" "$*"; }
+bad()  { printf '%s✗%s %s\n'  "$RED" "$NC" "$*"; fail=1; }
+warn() { printf '%s!%s %s\n'  "$YLW" "$NC" "$*"; }
+head() { printf '\n%s── %s%s\n' "$CYN" "$*" "$NC"; }
+
+# Go scope — internal + cmd only. data/restore-tests/ contains restored node_modules
+# with stray Go files that break `go ./...`.
+GO_SCOPE="./internal/... ./cmd/..."
+
+# ── Determine the commit range being pushed ──────────────────────────────────
+# git feeds "<local ref> <local sha> <remote ref> <remote sha>" on stdin.
+# We normalise to an explicit BASE..TIP so the diff covers the COMMITTED content,
+# not the working tree (critical for new branches where remote sha is all-zero).
+EMPTY_TREE="$(git hash-object -t tree /dev/null)"   # 4b825dc6... — diff base for new branches
+z="0000000000000000000000000000000000000000"
+BASE=""; TIP=""
+while read -r _localref localsha _remoteref remotesha; do
+  [ "$localsha" = "$z" ] && continue                # branch deletion — nothing to scan
+  TIP="$localsha"
+  if [ "$remotesha" = "$z" ]; then
+    BASE="$EMPTY_TREE"                               # new branch — scan all its commits
+  else
+    BASE="$remotesha"
+  fi
+done
+
+# Fallback when stdin is empty (manual invocation / some IDEs)
+if [ -z "$TIP" ]; then
+  TIP="HEAD"
+  if git rev-parse --verify -q '@{upstream}' >/dev/null 2>&1; then
+    BASE="$(git rev-parse @{upstream})"
+  else
+    BASE="$EMPTY_TREE"
+  fi
+fi
+
+RANGE="$BASE..$TIP"
+CHANGED_FILES="$(git diff --name-only "$BASE" "$TIP" 2>/dev/null)"
+
+printf '%s OpenSourceBackup pre-push gate %s  (range: %s)\n' "$CYN" "$NC" "$RANGE"
+
+# ── 1. Secret / private-data scan ────────────────────────────────────────────
+head "Secret & private-data scan"
+
+# 1a. Files that must never be pushed (defence in depth — also in .gitignore)
+FORBIDDEN="$(printf '%s\n' "$CHANGED_FILES" | grep -iE '(^|/)docs/security/|\.key$|\.pem$|\.p12$|\.pfx$|(^|/)certs/.*\.(key|crt)$|(^|/)\.env($|\.)|id_ed25519($|[^.])|id_rsa($|[^.])' || true)"
+if [ -n "$FORBIDDEN" ]; then
+  bad "Forbidden files in push:"
+  printf '%s\n' "$FORBIDDEN" | sed 's/^/      /'
+else
+  ok "No forbidden file paths"
+fi
+
+# 1b. Secret-looking content in the added lines of this push
+ADDED="$(git diff "$BASE" "$TIP" -- . ':(exclude)data/restore-tests/**' 2>/dev/null | grep -E '^\+' || true)"
+# patterns: bearer/api tokens, private key blocks, hardcoded passwords
+SECRET_HITS="$(printf '%s\n' "$ADDED" | grep -iE \
+  'BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY|sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|(api[_-]?key|secret|password|passwd|token)[[:space:]]*[:=][[:space:]]*["'\''][^"'\'' ]{8,}' \
+  | grep -ivE 'os\.Getenv|process\.env|import\.meta\.env|RESTIC_PASSWORD=\"\+|placeholder|example|YOUR_|\$\{' || true)"
+if [ -n "$SECRET_HITS" ]; then
+  bad "Possible hardcoded secrets in added lines:"
+  printf '%s\n' "$SECRET_HITS" | head -5 | sed 's/^/      /'
+  warn "If these are false positives, fix the pattern or use: git push --no-verify"
+else
+  ok "No hardcoded secrets in added lines"
+fi
+
+# ── 2. go vet ────────────────────────────────────────────────────────────────
+head "go vet"
+if VET_OUT="$(go vet $GO_SCOPE 2>&1)"; then
+  ok "go vet clean"
+else
+  bad "go vet reported issues:"
+  printf '%s\n' "$VET_OUT" | head -20 | sed 's/^/      /'
+fi
+
+# ── 3. go test ───────────────────────────────────────────────────────────────
+head "go test"
+if TEST_OUT="$(go test $GO_SCOPE 2>&1)"; then
+  ok "go test passed"
+else
+  bad "go test failed:"
+  printf '%s\n' "$TEST_OUT" | grep -E 'FAIL|panic|---' | head -20 | sed 's/^/      /'
+fi
+
+# ── 4. TypeScript check (conditional) ────────────────────────────────────────
+WEB_CHANGED="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^web/' || true)"
+if [ -n "$WEB_CHANGED" ]; then
+  head "TypeScript check (web/ changed)"
+  if [ -d "web/node_modules" ]; then
+    if TSC_OUT="$(cd web && npx --no-install tsc --noEmit 2>&1)"; then
+      ok "tsc --noEmit clean"
+    else
+      bad "TypeScript errors:"
+      printf '%s\n' "$TSC_OUT" | head -20 | sed 's/^/      /'
+    fi
+  else
+    warn "web/node_modules missing — skipping tsc (run: cd web && npm install)"
+  fi
+fi
+
+# ── Verdict ──────────────────────────────────────────────────────────────────
+printf '\n'
+if [ "$fail" -ne 0 ]; then
+  printf '%s GATE BLOCKED %s — fix the issues above, or override with: %sgit push --no-verify%s\n' \
+    "$RED" "$NC" "$YLW" "$NC"
+  exit 1
+fi
+printf '%s GATE PASSED %s — pushing.\n' "$GRN" "$NC"
+exit 0
