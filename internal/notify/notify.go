@@ -30,14 +30,17 @@ type Channel struct {
 type Notifier struct {
 	client *http.Client
 	log    *slog.Logger
+	smtp   smtpConfig
 }
 
 // New creates a Notifier. Logging is disabled by default — attach one with
 // WithLogger so dispatch failures are recorded in the structured log.
+// SMTP settings are read from the environment (see loadSMTPConfig).
 func New() *Notifier {
 	return &Notifier{
 		client: &http.Client{Timeout: 10 * time.Second},
 		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		smtp:   loadSMTPConfig(),
 	}
 }
 
@@ -69,8 +72,10 @@ func (n *Notifier) Send(ctx context.Context, channels []Channel, alerts []health
 				n.log.Warn("notify: webhook dispatch failed", "channel", ch.Name, "error", err)
 			}
 		case "email":
-			// Email via SMTP — placeholder for future implementation
-			n.log.Info("notify: email channel skipped — SMTP not yet implemented", "channel", ch.Name)
+			if err := n.sendEmail(ch, matching); err != nil {
+				// Non-fatal — log but continue with the remaining channels
+				n.log.Warn("notify: email dispatch failed", "channel", ch.Name, "error", err)
+			}
 		}
 	}
 	return nil

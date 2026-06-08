@@ -221,13 +221,23 @@ function NotificationChannels() {
               <label style={s.label}>Type</label>
               <select style={s.input} value={type} onChange={e=>setType(e.target.value)}>
                 <option value="webhook">Webhook (Slack / Teams / Discord)</option>
-                <option value="email">Email (coming soon)</option>
+                <option value="email">Email</option>
               </select>
             </div>
           </div>
           <div>
-            <label style={s.label}>Webhook URL</label>
-            <input style={s.input} value={target} onChange={e=>setTarget(e.target.value)} placeholder="https://hooks.slack.com/services/..." />
+            <label style={s.label}>{type === 'email' ? 'Email-Adresse' : 'Webhook URL'}</label>
+            <input
+              style={s.input}
+              value={target}
+              onChange={e=>setTarget(e.target.value)}
+              placeholder={type === 'email' ? 'ops@example.com' : 'https://hooks.slack.com/services/...'}
+            />
+            {type === 'email' && (
+              <div style={{ fontSize:11, color:'var(--text-dim)', marginTop:4 }}>
+                Versand erfordert serverseitig konfiguriertes SMTP (SMTP_HOST / SMTP_FROM).
+              </div>
+            )}
           </div>
           <div>
             <label style={s.label}>Minimum Severity</label>
