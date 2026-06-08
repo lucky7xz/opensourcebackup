@@ -74,6 +74,13 @@ func (s *stubJobStore) LatestByPolicyID(_ context.Context, policyID uuid.UUID) (
 }
 func (s *stubJobStore) Update(_ context.Context, _ *catalog.BackupJob) error { return nil }
 func (s *stubJobStore) Delete(_ context.Context, _ uuid.UUID) error          { return nil }
+func (s *stubJobStore) UpdateProgress(_ context.Context, _ uuid.UUID, _ catalog.JobProgress) error {
+	return nil
+}
+func (s *stubJobStore) FinalizeProgress(_ context.Context, _ uuid.UUID) error { return nil }
+func (s *stubJobStore) RequestCancel(_ context.Context, _ uuid.UUID, _ string) error {
+	return nil
+}
 
 // --- tests ---
 
