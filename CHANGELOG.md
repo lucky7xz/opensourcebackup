@@ -44,6 +44,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **B_JOB_CANCEL** — operator stop for a running backup (operational safety): protect
+  an important machine without a brutal `restic` kill. `POST /v1/jobs/{id}/cancel`
+  flags the job (audited: who/when/why); the agent's watcher cancels restic via
+  context and reports the job as **`cancelled`** (not `failed`). Operator role;
+  the stale lock self-heals via auto-unlock. Migration 000022.
 - **B_JOB_PROGRESS** — live backup progress: the agent streams restic's progress
   (percent, bytes, files, throughput) to the control plane via
   `PUT /v1/agent/jobs/{id}/progress`; `GET /v1/jobs` exposes it. Throttled to ~2s,
@@ -309,6 +314,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Hinzugefügt
 
+- **B_JOB_CANCEL** — Operator-Stop für ein laufendes Backup (Betriebssicherheit):
+  eine wichtige Maschine schützen, ohne restic brutal zu killen. `POST /v1/jobs/{id}/cancel`
+  markiert den Job (auditiert: wer/wann/warum); der Watcher des Agents bricht restic
+  per Context ab und meldet den Job als **`cancelled`** (nicht `failed`). Operator-Rolle;
+  der verwaiste Lock heilt via Auto-Unlock. Migration 000022.
 - **B_JOB_PROGRESS** — Live-Backup-Fortschritt: der Agent streamt restics
   Fortschritt (Prozent, Bytes, Dateien, Durchsatz) an die Control Plane via
   `PUT /v1/agent/jobs/{id}/progress`; `GET /v1/jobs` liefert ihn. Gedrosselt auf
