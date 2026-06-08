@@ -70,6 +70,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 
 	go s.runDeadManSwitch(ctx)
 	go s.runStaleTestCleaner(ctx)
+	go s.runStaleJobReaper(ctx)
 
 	<-ctx.Done()
 	s.mu.Lock()
@@ -412,6 +413,43 @@ func (s *Scheduler) cleanStaleRestoreTests(ctx context.Context, staleAfter time.
 	}
 	if cleaned > 0 {
 		s.log.Info("stale-cleaner: cleaned up stale tests", "count", cleaned)
+	}
+}
+
+// ── Stale-Job-Reaper ───────────────────────────────────────────────────────────
+
+// runStaleJobReaper periodically auto-fails backup/retention jobs that are stuck
+// in "running" without any agent heartbeat. Without this, a crashed agent or a
+// network partition leaves jobs running forever — they never finish, block the
+// dashboard's live view, and hide the fact that the backup never completed.
+//
+// Two grace periods (see catalog.JobStore.FailStaleJobs):
+//   - progressGrace: a job that reported progress, then went silent.
+//   - startGrace:    a job that never reported progress (older agent builds),
+//                    measured from start — generous so genuinely long backups
+//                    on non-reporting agents are not killed prematurely.
+func (s *Scheduler) runStaleJobReaper(ctx context.Context) {
+	const progressGrace = 30 * time.Minute // silent since last progress report
+	const startGrace    = 12 * time.Hour   // no progress ever, running this long
+	const checkEvery    = 10 * time.Minute
+
+	ticker := time.NewTicker(checkEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := s.jobs.FailStaleJobs(ctx, progressGrace, startGrace)
+			if err != nil {
+				s.log.Error("stale-job-reaper: failed to reap stale jobs", "error", err)
+				continue
+			}
+			if n > 0 {
+				s.log.Warn("stale-job-reaper: auto-failed stuck jobs",
+					"count", n, "progress_grace", progressGrace, "start_grace", startGrace)
+			}
+		}
 	}
 }
 

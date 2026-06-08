@@ -81,6 +81,9 @@ func (s *stubJobStore) FinalizeProgress(_ context.Context, _ uuid.UUID) error { 
 func (s *stubJobStore) RequestCancel(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
+func (s *stubJobStore) FailStaleJobs(_ context.Context, _, _ time.Duration) (int, error) {
+	return 0, nil
+}
 
 // --- tests ---
 
