@@ -89,6 +89,14 @@ make lint-install          golangci-lint v2
 DATABASE_URL=postgres://opensourcebackup:dev_password@localhost:5432/opensourcebackup?sslmode=disable
 LISTEN_ADDR=:8080
 CORS_ORIGIN=http://localhost:5173   # Web-UI Origin
+
+# Email-Benachrichtigungen (optional — sonst nur Webhook-Kanäle aktiv)
+SMTP_HOST=smtp.example.com          # Pflicht zum Aktivieren von Email
+SMTP_FROM=osb@example.com           # Pflicht zum Aktivieren von Email
+SMTP_PORT=587                       # Default 587 (STARTTLS); 465 für implizites TLS
+SMTP_USERNAME=<user>                # optional → aktiviert PLAIN-Auth
+SMTP_PASSWORD=<secret>              # optional, wird nie geloggt
+SMTP_TLS=false                      # "true" = implizites TLS (Port 465)
 ```
 
 ### Agent
@@ -123,17 +131,26 @@ cd web
 npm install
 npm run dev          # → http://localhost:5173
 npm run build        # → web/dist/ für Produktion
+npm test             # Vitest (Unit-Tests, einmalig)
+npm run test:watch   # Vitest im Watch-Modus
 ```
 
-## Tests (~70+)
+## Tests
 
 | Paket | Typ | Tests |
 |---|---|---|
 | `internal/auth` | Unit + Integration | Token-Hashing, Enrollment, Agent-Token |
-| `internal/api` | Unit | Handler, Middleware, AgentAuth, Modal-Actions |
-| `internal/agent` | Unit | Poll, 401, transient errors |
-| `internal/catalog` | Integration | Alle 5 Stores + B12 |
+| `internal/api` | Unit | Handler, Middleware (inkl. CSP-Härtung), AgentAuth |
+| `internal/agent` | Unit | Poll, 401, transient errors, restic stderr-Buffer |
+| `internal/catalog` | Integration | Alle Stores + Stale-Job-Reaper (`FailStaleJobs`) |
+| `internal/notify` | Unit | Webhook, SSRF-URL-Validierung, SMTP (Header-Injection) |
 | `internal/scheduler` | Unit | Scheduler Start |
+| `web` (Vitest) | Unit | `lib/pathSafety`, Cockpit-Helfer |
+
+> **Pre-Push-Gate:** `scripts/hooks/pre-push` (aktiv via `core.hooksPath`) führt vor
+> **jedem** `git push` automatisch aus: Secret-/Privatdaten-Scan, `go vet` + `go test`,
+> und bei `web/`-Änderungen `tsc` + `vitest`. Blockt bei Fehlern; Notausgang
+> `git push --no-verify`. Neue Clones aktivieren: `bash scripts/install-hooks.sh`.
 
 ## Migrationen
 
@@ -150,7 +167,9 @@ npm run build        # → web/dist/ für Produktion
 - [ ] `go build ./...` grün
 - [ ] `make lint` — 0 Issues
 - [ ] `make test` + `make test-integration` grün
-- [ ] Tokens nie geloggt
-- [ ] `CHANGELOG.md` aktualisiert
+- [ ] Bei `web/`-Änderungen: `npm test` (Vitest) + `npm run build` grün
+- [ ] Tokens/Secrets nie geloggt (auch SMTP_PASSWORD)
+- [ ] `CHANGELOG.md` aktualisiert (EN + DE)
 - [ ] Beide READMEs (EN + DE) synchron
 - [ ] `make build-agent-all` nach Agent-Änderungen
+- [ ] Pre-Push-Gate grün (läuft automatisch beim Push)

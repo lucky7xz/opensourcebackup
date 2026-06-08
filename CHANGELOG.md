@@ -12,6 +12,66 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — 2026-06-08
+
+### Security — API hardening & CSP
+
+- **Authorization hardened across the API (RBAC).** GDPR export/purge and the
+  audit log are now **admin-only**; enrollment-token creation and
+  systems/jobs/snapshots writes are role-gated (operator to create/update,
+  admin to delete) — matching the existing repository/policy pattern.
+- **SSRF protection on webhook URLs.** Notification webhook targets are validated
+  before storage and dispatch; private/loopback/link-local and cloud-metadata
+  ranges (e.g. 169.254.169.254) and non-http(s) schemes are rejected.
+- **Rate limiting on enrollment endpoints** (`POST /v1/agent/enroll`,
+  `POST /v1/systems/{id}/enrollment-token`) — 2/min per IP.
+- **CSRF token comparison is constant-time** (`crypto/subtle`).
+- **Content-Security-Policy hardened (R-01).** `script-src 'self'` — the build
+  emits no inline scripts, so `'unsafe-inline'` was dropped (primary XSS vector
+  closed). Dead font-CDN origins removed (no web fonts are loaded). `style-src`
+  keeps `'unsafe-inline'` by design (React inline styles) — now documented.
+- **No raw store errors leaked to clients** — sentinel errors map to safe
+  messages, everything else collapses to “internal error” (details logged
+  server-side).
+
+### Added
+
+- **Stale-Job-Reaper.** Running backup/retention jobs that go silent are
+  auto-failed every 10 min — two-tier grace (silent-after-progress 30 min, or
+  no-progress-since-start 12 h) so a crashed agent or network loss never leaves
+  a job stuck “running”. `internal/scheduler` + `catalog.JobStore.FailStaleJobs`.
+- **Email / SMTP notifications.** Real SMTP sender (STARTTLS on 587, implicit TLS
+  on 465); credentials come from the environment only
+  (`SMTP_HOST/FROM/PORT/USERNAME/PASSWORD/TLS`) — never the DB, never argv, never
+  logged. Recipient validation + CRLF header-injection protection. Settings UI
+  exposes the email channel.
+- **Restore-target path guardrails (B_RESTORE_REPO_SELECT).** The New Restore Test
+  modal assesses the target path (empty/safe/caution/danger) and blocks
+  filesystem roots and protected system directories. Advisory — the agent's
+  `validateRestorePath` remains the authoritative boundary. Repository selection
+  was already wired end to end.
+- **Cockpit redesign.** Operations-centre layout — KPI cards (systems, running
+  jobs, errors, restore verification), large per-system live-status cards with
+  progress/throughput/Stop, a run-now panel, a repository sidebar and a slim
+  recent-jobs table — replacing the table-only view. Small components under
+  `web/src/components/cockpit/`.
+- **Frontend test runner (Vitest).** The web project had none; adds unit tests
+  for `lib/pathSafety` and the cockpit helpers and a `test` script.
+- **Pre-push quality gate.** Versioned git hook (`scripts/hooks/pre-push`):
+  secret/private-data scan + `go vet`/`go test` + `tsc` + `vitest` on every push.
+
+### Fixed
+
+- **Scheduler never fired (5-field cron).** `cron.New(cron.WithSeconds())`
+  expected 6-field expressions while all policies use 5-field, so
+  `scheduled_policies` was 0 and no scheduled backups ran. Now `cron.New()`.
+- **Backup failures were undiagnosable.** `runBackup` discarded restic's stderr,
+  so failures surfaced only as “exit status N”. stderr is now captured (bounded,
+  8 KiB) and included in the error.
+- **Restore path “/” slipped through.** The path-safety check normalised a lone
+  “/” to empty and fell through to a soft warning; it is now treated as a
+  filesystem root (blocked). Caught by a unit test.
+
 ## [Unreleased] — 2026-06-06
 
 ### Fixed — Agent reliability (backups had silently stopped)
@@ -279,6 +339,69 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Deutsch]
 
 ---
+
+## [Unveröffentlicht] — 2026-06-08
+
+### Sicherheit — API-Härtung & CSP
+
+- **Autorisierung API-weit gehärtet (RBAC).** DSGVO-Export/-Löschung und das
+  Audit-Log sind jetzt **nur für Admins**; Enrollment-Token sowie Schreib-
+  zugriffe auf Systems/Jobs/Snapshots sind rollengeschützt (Operator zum
+  Anlegen/Ändern, Admin zum Löschen) — analog zum bestehenden Repository/Policy-
+  Muster.
+- **SSRF-Schutz für Webhook-URLs.** Webhook-Ziele werden vor Speichern und
+  Versand validiert; private/Loopback/Link-Local- und Cloud-Metadaten-Bereiche
+  (z. B. 169.254.169.254) sowie Nicht-HTTP(S)-Schemata werden abgelehnt.
+- **Rate-Limiting auf Enrollment-Endpunkten** (`POST /v1/agent/enroll`,
+  `POST /v1/systems/{id}/enrollment-token`) — 2/min pro IP.
+- **CSRF-Token-Vergleich in konstanter Zeit** (`crypto/subtle`).
+- **Content-Security-Policy gehärtet (R-01).** `script-src 'self'` — der Build
+  erzeugt keine Inline-Scripts, daher `'unsafe-inline'` entfernt (XSS-Haupt-
+  vektor zu). Tote Font-CDN-Origins entfernt (es werden keine Web-Fonts geladen).
+  `style-src` behält `'unsafe-inline'` bewusst (React-Inline-Styles) — jetzt
+  dokumentiert.
+- **Keine rohen Store-Fehler mehr an Clients** — Sentinel-Fehler liefern sichere
+  Meldungen, alles andere wird zu „internal error" (Details serverseitig
+  geloggt).
+
+### Hinzugefügt
+
+- **Stale-Job-Reaper.** Laufende Backup-/Retention-Jobs, die verstummen, werden
+  alle 10 min automatisch auf „failed" gesetzt — zweistufige Karenz (still nach
+  Fortschritt 30 min, oder nie Fortschritt seit Start 12 h), damit ein
+  abgestürzter Agent nie einen Job in „running" hängen lässt. `internal/scheduler`
+  + `catalog.JobStore.FailStaleJobs`.
+- **Email-/SMTP-Benachrichtigungen.** Echter SMTP-Versand (STARTTLS auf 587,
+  implizites TLS auf 465); Credentials nur aus der Umgebung
+  (`SMTP_HOST/FROM/PORT/USERNAME/PASSWORD/TLS`) — nie DB, nie argv, nie Logs.
+  Empfänger-Validierung + CRLF-Header-Injection-Schutz. Settings-UI bietet den
+  Email-Kanal an.
+- **Pfad-Guardrails für Restore-Ziele (B_RESTORE_REPO_SELECT).** Das „New Restore
+  Test"-Modal bewertet den Zielpfad (leer/sicher/Vorsicht/gefährlich) und
+  blockiert Dateisystem-Wurzeln und geschützte System-Verzeichnisse. Advisory —
+  die Agent-Prüfung `validateRestorePath` bleibt maßgeblich. Repository-Auswahl
+  war bereits durchverdrahtet.
+- **Cockpit-Redesign.** Operations-Zentrale — KPI-Karten (Systeme, laufende Jobs,
+  Fehler, Restore-Verifikation), große Live-Status-Karten pro System mit
+  Fortschritt/Durchsatz/Stop, Run-Now-Panel, Repository-Sidebar und schlanke
+  Letzte-Jobs-Tabelle — statt reiner Tabelle. Kleine Komponenten unter
+  `web/src/components/cockpit/`.
+- **Frontend-Test-Runner (Vitest).** Das Web-Projekt hatte keinen; ergänzt
+  Unit-Tests für `lib/pathSafety` und die Cockpit-Helfer + `test`-Script.
+- **Pre-Push-Quality-Gate.** Versionierter Git-Hook (`scripts/hooks/pre-push`):
+  Secret-/Privatdaten-Scan + `go vet`/`go test` + `tsc` + `vitest` bei jedem Push.
+
+### Behoben
+
+- **Scheduler feuerte nie (5-Feld-Cron).** `cron.New(cron.WithSeconds())`
+  erwartete 6-Feld-Ausdrücke, während alle Policies 5-Feld nutzen — daher
+  `scheduled_policies` = 0 und keine geplanten Backups. Jetzt `cron.New()`.
+- **Backup-Fehler nicht diagnostizierbar.** `runBackup` verwarf restics stderr,
+  Fehler kamen nur als „exit status N". stderr wird jetzt erfasst (begrenzt,
+  8 KiB) und an den Fehler gehängt.
+- **Restore-Pfad „/" rutschte durch.** Die Pfadprüfung normalisierte ein einzelnes
+  „/" zu leer und fiel auf eine weiche Warnung; es gilt jetzt als Dateisystem-
+  Wurzel (blockiert). Von einem Unit-Test gefunden.
 
 ## [Unveröffentlicht] — 2026-06-06
 
