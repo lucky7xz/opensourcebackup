@@ -281,6 +281,10 @@ func (s *stubJobStore) RequestCancel(_ context.Context, id uuid.UUID, reason str
 	return nil
 }
 
+func (s *stubJobStore) FailStaleJobs(_ context.Context, _, _ time.Duration) (int, error) {
+	return 0, nil
+}
+
 func (s *stubJobStore) Delete(_ context.Context, id uuid.UUID) error {
 	if _, ok := s.jobs[id]; !ok {
 		return catalog.ErrNotFound

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -39,6 +41,13 @@ type JobStore interface {
 	// RequestCancel marks a running job for cooperative cancellation (B_JOB_CANCEL).
 	// The agent polls this flag and stops restic; only running/pending jobs qualify.
 	RequestCancel(ctx context.Context, id uuid.UUID, reason string) error
+	// FailStaleJobs auto-fails running jobs that have gone silent (Stale-Job-Reaper).
+	// A job is stale when EITHER it reported progress but then stopped for longer
+	// than progressGrace, OR it never reported progress and has been running since
+	// before startGrace (covers agents that don't emit progress). Returns the count
+	// of jobs failed. Protects against agent crashes / network loss leaving jobs
+	// stuck "running" forever.
+	FailStaleJobs(ctx context.Context, progressGrace, startGrace time.Duration) (int, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -205,6 +214,28 @@ func (s *pgJobStore) RequestCancel(ctx context.Context, id uuid.UUID, reason str
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *pgJobStore) FailStaleJobs(ctx context.Context, progressGrace, startGrace time.Duration) (int, error) {
+	now := time.Now()
+	progressDeadline := now.Add(-progressGrace) // reported progress, then went silent
+	startDeadline := now.Add(-startGrace)       // never reported progress (old agent)
+	const reason = "auto-failed: no agent heartbeat — the agent may have crashed or lost connection"
+
+	tag, err := s.db.pool.Exec(ctx, `
+		UPDATE backup_jobs
+		SET status='failed', finished_at=NOW(), error_summary=$1
+		WHERE status='running' AND (
+			(last_progress_at IS NOT NULL AND last_progress_at < $2)
+			OR
+			(last_progress_at IS NULL AND COALESCE(started_at, created_at) < $3)
+		)`,
+		reason, progressDeadline, startDeadline,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("fail stale jobs: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (s *pgJobStore) Delete(ctx context.Context, id uuid.UUID) error {
