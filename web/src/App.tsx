@@ -13,6 +13,7 @@ import { Repositories } from './pages/Repositories'
 import { Evidence }     from './pages/Evidence'
 import { Alerts }       from './pages/Alerts'
 import { Settings }     from './pages/Settings'
+import { Cockpit }     from './pages/Cockpit'
 
 function AppShell() {
   const auth = useAuth()
@@ -40,6 +41,7 @@ function AppShell() {
             <div style={{ flex:1, overflowY:'auto' }}>
               <Routes>
                 <Route path="/"              element={<Dashboard />} />
+                <Route path="/cockpit"       element={<Cockpit />} />
                 <Route path="/systems"       element={<Systems />} />
                 <Route path="/agents"        element={<Agents />} />
                 <Route path="/policies"      element={<Policies />} />

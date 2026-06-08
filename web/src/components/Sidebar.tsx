@@ -4,6 +4,7 @@ const NAV = [
   {
     label: 'OPERATIONS',
     links: [
+      { to: '/cockpit',       label: 'Cockpit',       icon: '⊙' },
       { to: '/',              label: 'Overview',      icon: '⊞' },
       { to: '/systems',       label: 'Systems',       icon: '🖥' },
       { to: '/agents',        label: 'Agents',        icon: '◉' },
