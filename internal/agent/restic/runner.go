@@ -335,6 +335,11 @@ func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResu
 	if err != nil {
 		return nil, fmt.Errorf("restic backup pipe: %w", err)
 	}
+	// Capture stderr so a failing backup reports restic's actual message
+	// (repository unreachable, password, lock, …) instead of a bare exit code.
+	// Bounded to avoid unbounded memory if restic floods stderr.
+	var stderr limitedBuffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("restic backup start: %w", err)
 	}
@@ -376,13 +381,41 @@ func (r *Runner) runBackup(ctx context.Context, opts BackupOptions) (*BackupResu
 		if isExitStatus(err, 3) && result != nil {
 			return result, nil
 		}
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("restic backup: %w — %s", err, msg)
+		}
 		return nil, fmt.Errorf("restic backup: %w", err)
 	}
 	if result == nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("restic backup: no summary in output — %s", msg)
+		}
 		return nil, fmt.Errorf("restic backup: no summary in output")
 	}
 	return result, nil
 }
+
+// limitedBuffer is an io.Writer that retains at most maxStderrBytes, so a
+// misbehaving restic flooding stderr can't exhaust agent memory. Excess is
+// silently dropped — we only need the message for diagnostics.
+type limitedBuffer struct {
+	buf bytes.Buffer
+}
+
+const maxStderrBytes = 8 << 10 // 8 KiB is plenty for an error message
+
+func (l *limitedBuffer) Write(p []byte) (int, error) {
+	if remaining := maxStderrBytes - l.buf.Len(); remaining > 0 {
+		if len(p) > remaining {
+			l.buf.Write(p[:remaining])
+		} else {
+			l.buf.Write(p)
+		}
+	}
+	return len(p), nil // always report full write so restic isn't blocked
+}
+
+func (l *limitedBuffer) String() string { return l.buf.String() }
 
 // isExitStatus returns true if err is an *exec.ExitError with the given exit code.
 func isExitStatus(err error, code int) bool {
