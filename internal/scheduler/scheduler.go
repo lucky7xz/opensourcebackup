@@ -98,7 +98,7 @@ func (s *Scheduler) reload(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	s.cron.Stop()
-	s.cron = cron.New(cron.WithSeconds()) // no-op: standard 5-field cron still works
+	s.cron = cron.New() // standard 5-field cron (min hour dom month dow) — no WithSeconds()
 
 	scheduled := 0
 	for _, p := range policies {
