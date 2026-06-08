@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -27,13 +29,24 @@ type Channel struct {
 // Notifier sends notifications for active alerts.
 type Notifier struct {
 	client *http.Client
+	log    *slog.Logger
 }
 
-// New creates a Notifier.
+// New creates a Notifier. Logging is disabled by default — attach one with
+// WithLogger so dispatch failures are recorded in the structured log.
 func New() *Notifier {
 	return &Notifier{
 		client: &http.Client{Timeout: 10 * time.Second},
+		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
+}
+
+// WithLogger attaches a structured logger and returns the Notifier for chaining.
+func (n *Notifier) WithLogger(l *slog.Logger) *Notifier {
+	if l != nil {
+		n.log = l
+	}
+	return n
 }
 
 // Send dispatches alerts to all matching enabled channels.
@@ -52,12 +65,12 @@ func (n *Notifier) Send(ctx context.Context, channels []Channel, alerts []health
 		switch ch.Type {
 		case "webhook":
 			if err := n.sendWebhook(ctx, ch, matching); err != nil {
-				// Non-fatal — log but continue
-				fmt.Printf("notify: webhook %q failed: %v\n", ch.Name, err)
+				// Non-fatal — log but continue with the remaining channels
+				n.log.Warn("notify: webhook dispatch failed", "channel", ch.Name, "error", err)
 			}
 		case "email":
 			// Email via SMTP — placeholder for future implementation
-			fmt.Printf("notify: email channel %q — SMTP not yet implemented\n", ch.Name)
+			n.log.Info("notify: email channel skipped — SMTP not yet implemented", "channel", ch.Name)
 		}
 	}
 	return nil

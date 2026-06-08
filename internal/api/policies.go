@@ -40,7 +40,7 @@ func (h *Handler) createPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.policies.Create(r.Context(), &p); err != nil {
 		h.log.Error("create policy", "error", err)
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	_ = h.auditStore.Append(r.Context(), audit.Event(
@@ -62,7 +62,7 @@ func (h *Handler) getPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := h.policies.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -81,7 +81,7 @@ func (h *Handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	p.ID = id
 	if err := h.policies.Update(r.Context(), &p); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	_ = h.auditStore.Append(r.Context(), audit.Event(
@@ -102,7 +102,7 @@ func (h *Handler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.policies.Delete(r.Context(), id); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	_ = h.auditStore.Append(r.Context(), audit.Event(

@@ -15,6 +15,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// ── Authentication ─────────────────────────────────────────────────────
 	authLimiter := security.NewIPRateLimiter(5.0/60, 5)
 	authRate    := security.RateLimit(authLimiter)
+	// Enrollment is more sensitive (joins an agent / mints tokens) — tighter limit.
+	enrollLimiter := security.NewIPRateLimiter(2.0/60, 3) // 2/min sustained, burst 3
+	enrollRate    := security.RateLimit(enrollLimiter)
 	mux.Handle("POST /auth/login",  authRate(http.HandlerFunc(h.handleRBACLogin)))
 	mux.Handle("POST /auth/logout", http.HandlerFunc(h.handleRBACLogout))
 	mux.Handle("GET /auth/me",      http.HandlerFunc(h.handleAuthMe))
@@ -37,12 +40,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Local (all-in-one) installer script
 	mux.HandleFunc("GET /scripts/install-local.ps1", h.serveInstallScript)
 
-	// Enrollment — operator+ required (generates token that lets an agent join)
-	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token",
-		requireRoleFn(auth.RoleOperator, h.createEnrollmentToken))
+	// Enrollment — operator+ required (generates token that lets an agent join).
+	// Rate-limited to blunt token-minting abuse.
+	mux.Handle("POST /v1/systems/{id}/enrollment-token",
+		enrollRate(requireRoleFn(auth.RoleOperator, h.createEnrollmentToken)))
 
-	// Agent enrollment (unauthenticated — presents one-time token)
-	mux.HandleFunc("POST /v1/agent/enroll", h.enrollAgent)
+	// Agent enrollment (unauthenticated — presents one-time token).
+	// Rate-limited to blunt brute-forcing of enrollment tokens.
+	mux.Handle("POST /v1/agent/enroll", enrollRate(http.HandlerFunc(h.enrollAgent)))
 
 	// Agent-only routes (protected by AgentAuth middleware)
 	agentMux := http.NewServeMux()

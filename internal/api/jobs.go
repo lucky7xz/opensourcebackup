@@ -25,7 +25,7 @@ func (h *Handler) cancelJob(w http.ResponseWriter, r *http.Request) {
 	_ = decode(r, &body) // reason is optional
 
 	if err := h.jobs.RequestCancel(r.Context(), id, body.Reason); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	// Audit who/when/why — cancelling a backup is an operational safety action.
@@ -95,7 +95,7 @@ func (h *Handler) createJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.jobs.Create(r.Context(), &j); err != nil {
 		h.log.Error("create job", "error", err)
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusCreated, j)
@@ -109,7 +109,7 @@ func (h *Handler) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 	j, err := h.jobs.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, j)
@@ -128,7 +128,7 @@ func (h *Handler) updateJob(w http.ResponseWriter, r *http.Request) {
 	}
 	j.ID = id
 	if err := h.jobs.Update(r.Context(), &j); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, j)
@@ -141,7 +141,7 @@ func (h *Handler) deleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.jobs.Delete(r.Context(), id); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
