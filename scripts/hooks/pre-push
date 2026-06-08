@@ -107,19 +107,30 @@ else
   printf '%s\n' "$TEST_OUT" | grep -E 'FAIL|panic|---' | head -20 | sed 's/^/      /'
 fi
 
-# ── 4. TypeScript check (conditional) ────────────────────────────────────────
+# ── 4. Frontend checks (conditional) ─────────────────────────────────────────
 WEB_CHANGED="$(printf '%s\n' "$CHANGED_FILES" | grep -E '^web/' || true)"
 if [ -n "$WEB_CHANGED" ]; then
-  head "TypeScript check (web/ changed)"
   if [ -d "web/node_modules" ]; then
+    head "TypeScript check (web/ changed)"
     if TSC_OUT="$(cd web && npx --no-install tsc --noEmit 2>&1)"; then
       ok "tsc --noEmit clean"
     else
       bad "TypeScript errors:"
       printf '%s\n' "$TSC_OUT" | head -20 | sed 's/^/      /'
     fi
+
+    # Frontend unit tests (vitest). Only run when the test script exists.
+    if grep -q '"test"' web/package.json 2>/dev/null; then
+      head "Frontend tests (vitest)"
+      if TEST_OUT="$(cd web && npm test --silent 2>&1)"; then
+        ok "vitest passed"
+      else
+        bad "vitest failed:"
+        printf '%s\n' "$TEST_OUT" | grep -E 'FAIL|✗|×|[0-9]+ failed' | head -15 | sed 's/^/      /'
+      fi
+    fi
   else
-    warn "web/node_modules missing — skipping tsc (run: cd web && npm install)"
+    warn "web/node_modules missing — skipping tsc + tests (run: cd web && npm install)"
   fi
 fi
 
