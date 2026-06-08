@@ -190,15 +190,11 @@ func main() {
 		addr = ":8080"
 	}
 
-	tlsCert     := os.Getenv("TLS_CERT_FILE")
-	tlsKey      := os.Getenv("TLS_KEY_FILE")
-	tlsEnabled  := tlsCert != "" && tlsKey != ""
-	tlsRequired := os.Getenv("TLS_REQUIRED") == "true"
-
-	// When TLS is required but not configured, refuse to start.
-	// This prevents accidental plaintext deployments in production.
-	if tlsRequired && !tlsEnabled {
-		logger.Error("TLS_REQUIRED=true but TLS_CERT_FILE/TLS_KEY_FILE not set — refusing to start in HTTP mode")
+	// Resolve TLS configuration. The required-but-unconfigured guardrail lives in
+	// resolveServerTLS (unit-tested) so it can't silently regress.
+	tlsCfg, err := resolveServerTLS(os.Getenv)
+	if err != nil {
+		logger.Error("invalid TLS configuration", "error", err)
 		os.Exit(1)
 	}
 
@@ -216,8 +212,8 @@ func main() {
 	// server listens on that address and redirects all traffic to HTTPS.
 	// Example: LISTEN_ADDR=:8443 HTTP_REDIRECT_ADDR=:8080
 	var redirectSrv *http.Server
-	if tlsEnabled {
-		if redirectAddr := os.Getenv("HTTP_REDIRECT_ADDR"); redirectAddr != "" {
+	if tlsCfg.enabled {
+		if redirectAddr := tlsCfg.redirectAddr; redirectAddr != "" {
 			redirectSrv = &http.Server{
 				Addr:              redirectAddr,
 				ReadTimeout:       serverReadTimeout,
@@ -238,13 +234,13 @@ func main() {
 	}
 
 	go func() {
-		if tlsEnabled {
+		if tlsCfg.enabled {
 			logger.Info("control plane starting with HTTPS",
 				"addr", addr,
-				"cert", tlsCert,
-				"tls_required", tlsRequired,
+				"cert", tlsCfg.certFile,
+				"tls_required", tlsCfg.required,
 			)
-			if err := srv.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
+			if err := srv.ListenAndServeTLS(tlsCfg.certFile, tlsCfg.keyFile); err != nil && err != http.ErrServerClosed {
 				logger.Error("server error", "error", err)
 			}
 		} else {
