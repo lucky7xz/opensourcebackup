@@ -40,8 +40,9 @@ export function assessRestorePath(raw: string): PathAssessment {
 
   const norm = normalise(raw)
 
-  // Filesystem root or a bare drive letter (e.g. "/", "C:", "C:/")
-  if (norm === '/' || /^[a-z]:$/.test(norm)) {
+  // Filesystem root or a bare drive letter (e.g. "/", "///", "C:", "C:/").
+  // A non-empty input that normalises to "" was all path separators → root.
+  if (norm === '' || norm === '/' || /^[a-z]:$/.test(norm)) {
     return {
       risk: 'danger',
       title: 'Dateisystem-Wurzel',
