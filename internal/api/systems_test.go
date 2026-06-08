@@ -65,7 +65,8 @@ func TestListSystems_ReturnsEmptyArray_WhenNoSystems(t *testing.T) {
 func TestCreateSystem_Returns201_WithID(t *testing.T) {
 	mux := newMux(newTestHandler())
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"web-01","RiskClass":"standard"}`)))
+	req := withOperator(httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"web-01","RiskClass":"standard"}`)))
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Errorf("want 201, got %d — body: %s", rec.Code, rec.Body.String())
@@ -82,7 +83,8 @@ func TestCreateSystem_Returns201_WithID(t *testing.T) {
 func TestCreateSystem_Returns400_WhenHostnameMissing(t *testing.T) {
 	mux := newMux(newTestHandler())
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{}`)))
+	req := withOperator(httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{}`)))
+	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", rec.Code)
 	}
@@ -93,7 +95,7 @@ func TestGetSystem_Returns200_WhenExists(t *testing.T) {
 	mux := newMux(h)
 
 	createRec := httptest.NewRecorder()
-	mux.ServeHTTP(createRec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"db-01","RiskClass":"critical"}`)))
+	mux.ServeHTTP(createRec, withOperator(httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"db-01","RiskClass":"critical"}`))))
 	var created catalog.System
 	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
 		t.Fatalf("decode create: %v", err)
@@ -120,14 +122,14 @@ func TestDeleteSystem_Returns204_WhenExists(t *testing.T) {
 	mux := newMux(h)
 
 	createRec := httptest.NewRecorder()
-	mux.ServeHTTP(createRec, httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"to-delete","RiskClass":"standard"}`)))
+	mux.ServeHTTP(createRec, withOperator(httptest.NewRequest("POST", "/v1/systems", strings.NewReader(`{"Hostname":"to-delete","RiskClass":"standard"}`))))
 	var created catalog.System
 	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
 		t.Fatalf("decode create: %v", err)
 	}
 
 	delRec := httptest.NewRecorder()
-	mux.ServeHTTP(delRec, httptest.NewRequest("DELETE", "/v1/systems/"+created.ID.String(), nil))
+	mux.ServeHTTP(delRec, withAdmin(httptest.NewRequest("DELETE", "/v1/systems/"+created.ID.String(), nil)))
 	if delRec.Code != http.StatusNoContent {
 		t.Errorf("want 204, got %d", delRec.Code)
 	}
@@ -136,7 +138,7 @@ func TestDeleteSystem_Returns204_WhenExists(t *testing.T) {
 func TestDeleteSystem_Returns404_WhenMissing(t *testing.T) {
 	mux := newMux(newTestHandler())
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("DELETE", "/v1/systems/"+uuid.New().String(), nil))
+	mux.ServeHTTP(rec, withAdmin(httptest.NewRequest("DELETE", "/v1/systems/"+uuid.New().String(), nil)))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("want 404, got %d", rec.Code)
 	}

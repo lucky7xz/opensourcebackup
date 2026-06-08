@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,27 @@ import (
 
 // ensure time import is used
 var _ = time.Now
+
+// withAdmin returns a copy of r with a synthetic admin session in its context.
+// Use this for any request that hits a requireRoleFn-protected route in unit tests.
+func withAdmin(r *http.Request) *http.Request {
+	return r.WithContext(auth.WithSession(r.Context(), &auth.Session{
+		UserID:    uuid.New(),
+		UserEmail: "test-admin@osb",
+		Role:      auth.RoleAdmin,
+		CreatedAt: time.Now(),
+	}))
+}
+
+// withOperator returns a copy of r with a synthetic operator session.
+func withOperator(r *http.Request) *http.Request {
+	return r.WithContext(auth.WithSession(r.Context(), &auth.Session{
+		UserID:    uuid.New(),
+		UserEmail: "test-operator@osb",
+		Role:      auth.RoleOperator,
+		CreatedAt: time.Now(),
+	}))
+}
 
 // stubEnrollmentTokenStore — in-memory for tests.
 type stubEnrollmentTokenStore struct{}

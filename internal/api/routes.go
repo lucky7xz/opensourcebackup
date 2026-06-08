@@ -37,8 +37,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Local (all-in-one) installer script
 	mux.HandleFunc("GET /scripts/install-local.ps1", h.serveInstallScript)
 
-	// Enrollment (admin operation — protected by network/future admin auth)
-	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token", h.createEnrollmentToken)
+	// Enrollment — operator+ required (generates token that lets an agent join)
+	mux.HandleFunc("POST /v1/systems/{id}/enrollment-token",
+		requireRoleFn(auth.RoleOperator, h.createEnrollmentToken))
 
 	// Agent enrollment (unauthenticated — presents one-time token)
 	mux.HandleFunc("POST /v1/agent/enroll", h.enrollAgent)
@@ -66,11 +67,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	agentMux.HandleFunc("PUT /v1/agent/restore-tests/{id}/fail", h.failAgentRestoreTest)
 	mux.Handle("/v1/agent/", AgentAuth(h.agentTokens)(agentMux))
 
-	mux.HandleFunc("GET /v1/systems", h.listSystems)
-	mux.HandleFunc("POST /v1/systems", h.createSystem)
-	mux.HandleFunc("GET /v1/systems/{id}", h.getSystem)
-	mux.HandleFunc("PUT /v1/systems/{id}", h.updateSystem)
-	mux.HandleFunc("DELETE /v1/systems/{id}", h.deleteSystem)
+	mux.HandleFunc("GET /v1/systems",         h.listSystems)
+	mux.HandleFunc("POST /v1/systems",        requireRoleFn(auth.RoleOperator, h.createSystem))
+	mux.HandleFunc("GET /v1/systems/{id}",    h.getSystem)
+	mux.HandleFunc("PUT /v1/systems/{id}",    requireRoleFn(auth.RoleOperator, h.updateSystem))
+	mux.HandleFunc("DELETE /v1/systems/{id}", requireRoleFn(auth.RoleAdmin, h.deleteSystem))
 
 	mux.HandleFunc("GET /v1/repositories",             h.listRepositories)
 	mux.HandleFunc("POST /v1/repositories",            requireRoleFn(auth.RoleOperator, h.createRepository))
@@ -86,17 +87,17 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /v1/policies/{id}",    requireRoleFn(auth.RoleOperator, h.updatePolicy))
 	mux.HandleFunc("DELETE /v1/policies/{id}", requireRoleFn(auth.RoleAdmin, h.deletePolicy))
 
-	mux.HandleFunc("GET /v1/jobs", h.listJobs)
-	mux.HandleFunc("POST /v1/jobs", h.createJob)
+	mux.HandleFunc("GET /v1/jobs",              h.listJobs)
+	mux.HandleFunc("POST /v1/jobs",             requireRoleFn(auth.RoleOperator, h.createJob))
 	mux.HandleFunc("POST /v1/jobs/{id}/cancel", requireRoleFn(auth.RoleOperator, h.cancelJob))
-	mux.HandleFunc("GET /v1/jobs/{id}", h.getJob)
-	mux.HandleFunc("PUT /v1/jobs/{id}", h.updateJob)
-	mux.HandleFunc("DELETE /v1/jobs/{id}", h.deleteJob)
+	mux.HandleFunc("GET /v1/jobs/{id}",         h.getJob)
+	mux.HandleFunc("PUT /v1/jobs/{id}",         requireRoleFn(auth.RoleOperator, h.updateJob))
+	mux.HandleFunc("DELETE /v1/jobs/{id}",      requireRoleFn(auth.RoleAdmin, h.deleteJob))
 
-	mux.HandleFunc("GET /v1/snapshots", h.listSnapshots)
-	mux.HandleFunc("POST /v1/snapshots", h.createSnapshot)
-	mux.HandleFunc("GET /v1/snapshots/{id}", h.getSnapshot)
-	mux.HandleFunc("DELETE /v1/snapshots/{id}", h.deleteSnapshot)
+	mux.HandleFunc("GET /v1/snapshots",          h.listSnapshots)
+	mux.HandleFunc("POST /v1/snapshots",         requireRoleFn(auth.RoleOperator, h.createSnapshot))
+	mux.HandleFunc("GET /v1/snapshots/{id}",     h.getSnapshot)
+	mux.HandleFunc("DELETE /v1/snapshots/{id}",  requireRoleFn(auth.RoleAdmin, h.deleteSnapshot))
 
 	mux.HandleFunc("GET /v1/restore-tests", h.listRestoreTests)
 	mux.HandleFunc("POST /v1/restore-tests", h.createRestoreTest)
@@ -111,18 +112,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/health/alerts",   h.handleHealthAlerts)
 	mux.HandleFunc("GET /v1/health/activity", h.handleHealthActivity)
 
-	// ── Audit log (GDPR transparency) ─────────────────────────────────────
-	mux.HandleFunc("GET /v1/audit", h.handleAuditLog)
+	// ── Audit log — admin only (contains hashed IPs, user-agents, actions) ──
+	mux.HandleFunc("GET /v1/audit", requireRoleFn(auth.RoleAdmin, h.handleAuditLog))
 
 	// ── Notification channels ─────────────────────────────────────────────
-	mux.HandleFunc("GET /v1/notifications",          h.handleListNotifications)
-	mux.HandleFunc("POST /v1/notifications",         requireRoleFn(auth.RoleOperator, h.handleCreateNotification))
-	mux.HandleFunc("DELETE /v1/notifications/{id}",  requireRoleFn(auth.RoleOperator, h.handleDeleteNotification))
+	mux.HandleFunc("GET /v1/notifications",            h.handleListNotifications)
+	mux.HandleFunc("POST /v1/notifications",           requireRoleFn(auth.RoleOperator, h.handleCreateNotification))
+	mux.HandleFunc("DELETE /v1/notifications/{id}",    requireRoleFn(auth.RoleOperator, h.handleDeleteNotification))
 	mux.HandleFunc("POST /v1/notifications/{id}/test", requireRoleFn(auth.RoleOperator, h.handleTestNotification))
 
-	// ── GDPR — Art. 17 (erasure) + Art. 20 (portability) ─────────────────
-	mux.HandleFunc("GET /v1/gdpr/systems/{id}/export", h.handleGDPRExport)
-	mux.HandleFunc("DELETE /v1/gdpr/systems/{id}/purge", h.handleGDPRPurge)
+	// ── GDPR — Art. 17 (erasure) + Art. 20 (portability) — admin only ────
+	mux.HandleFunc("GET /v1/gdpr/systems/{id}/export",    requireRoleFn(auth.RoleAdmin, h.handleGDPRExport))
+	mux.HandleFunc("DELETE /v1/gdpr/systems/{id}/purge",  requireRoleFn(auth.RoleAdmin, h.handleGDPRPurge))
 
 	// Web UI — served from WEB_UI_DIR (default: web/dist).
 	// All unknown paths fall through to index.html for React Router.

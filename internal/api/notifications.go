@@ -52,6 +52,13 @@ func (h *Handler) handleCreateNotification(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "name and target are required")
 		return
 	}
+	// SSRF protection: validate webhook URL before storing
+	if req.Type == "webhook" || req.Type == "" {
+		if err := notify.ValidateWebhookURL(req.Target); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid webhook URL: "+err.Error())
+			return
+		}
+	}
 	if req.MinSeverity == "" {
 		req.MinSeverity = "warning"
 	}
