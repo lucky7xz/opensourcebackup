@@ -77,6 +77,38 @@ func TestSecurityHeaders_SetsAllRequiredHeaders(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersCSP_IsHardened(t *testing.T) {
+	handler := api.SecurityHeadersCSP(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/ui/", nil))
+
+	csp := rec.Header().Get("Content-Security-Policy")
+
+	// script-src must be locked to 'self' — no inline scripts allowed (R-01).
+	if !strings.Contains(csp, "script-src 'self';") {
+		t.Errorf("script-src must be 'self', got CSP: %q", csp)
+	}
+	if strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
+		t.Error("script-src must NOT allow 'unsafe-inline'")
+	}
+	// Dead font-CDN origins must be gone.
+	for _, dead := range []string{"fonts.googleapis.com", "fonts.gstatic.com"} {
+		if strings.Contains(csp, dead) {
+			t.Errorf("CSP must not reference unused origin %q", dead)
+		}
+	}
+	// style-src retains 'unsafe-inline' by design (React inline styles).
+	if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+		t.Errorf("style-src must keep 'unsafe-inline' for inline styles, got: %q", csp)
+	}
+	// Framing still denied.
+	if !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Error("frame-ancestors 'none' must be present")
+	}
+}
+
 func TestRequestBodyLimit_Returns413_WhenBodyExceedsLimit(t *testing.T) {
 	handler := api.RequestBodyLimit(10)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buf := make([]byte, 100)

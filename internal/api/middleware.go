@@ -89,24 +89,29 @@ func SecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// SecurityHeadersCSP sets hardened HTTP response headers with a CSP that allows
-// the React SPA to load fonts (Google Fonts CDN) and inline styles (Vite build).
-// Used as the top-level middleware wrapping the full mux.
+// SecurityHeadersCSP sets hardened HTTP response headers with a CSP for the
+// React SPA. Used as the top-level middleware wrapping the full mux.
+//
+// Hardening notes (R-01):
+//   - script-src 'self': the Vite build emits only an external module script —
+//     there are NO inline <script> blocks, so 'unsafe-inline' was removed.
+//     This closes the primary XSS vector.
+//   - No font CDN: the app loads no web fonts (no @font-face / @import / <link>);
+//     it falls back to system fonts. The former fonts.googleapis.com /
+//     fonts.gstatic.com allowances were dead and have been removed.
+//   - style-src retains 'unsafe-inline' by design: the UI is built entirely on
+//     React inline styles (style={...}) and small injected <style> blocks. CSP
+//     governs inline style attributes, so removing 'unsafe-inline' would require
+//     migrating the whole frontend to external/hashed stylesheets. Accepted as a
+//     deliberate architectural trade-off, not an oversight.
 func SecurityHeadersCSP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCommonSecurityHeaders(w)
-		// TODO(security): Remove 'unsafe-inline' before production hardening.
-		// Current requirement: Vite's build injects inline styles; Google Fonts CDN
-		// is used for Inter + JetBrains Mono. Roadmap:
-		//   1. Replace Google Fonts with self-hosted font files → drop fonts.googleapis.com
-		//   2. Configure Vite to extract CSS to separate files → drop style unsafe-inline
-		//   3. Use script nonces for any remaining inline scripts → drop script unsafe-inline
-		// Tracking issue: #security-csp-hardening
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+          // TODO: replace with nonces
-				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+ // TODO: self-host fonts
-				"font-src 'self' https://fonts.gstatic.com data:; "+
+				"script-src 'self'; "+
+				"style-src 'self' 'unsafe-inline'; "+ // required by React inline styles
+				"font-src 'self' data:; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self'; "+
 				"frame-ancestors 'none'",
