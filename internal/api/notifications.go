@@ -120,7 +120,7 @@ func (h *Handler) handleTestNotification(w http.ResponseWriter, r *http.Request)
 		Category:    "system",
 	}}
 
-	n := notify.New()
+	n := notify.New().WithLogger(h.log)
 	if err := n.Send(r.Context(), []notify.Channel{*ch}, testAlerts); err != nil {
 		writeError(w, http.StatusInternalServerError, "send failed: "+err.Error())
 		return

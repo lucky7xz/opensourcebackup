@@ -150,3 +150,19 @@ func httpStatusForError(err error) int {
 		return http.StatusInternalServerError
 	}
 }
+
+// safeErrorMessage returns a client-safe message for a store error.
+// Known sentinel errors keep their (non-sensitive) text; everything else is
+// collapsed to a generic message so raw DB errors (table names, constraints,
+// driver internals) never reach the client. Detailed errors should be logged
+// server-side at the call site.
+func safeErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, catalog.ErrNotFound):
+		return "not found"
+	case errors.Is(err, catalog.ErrConflict):
+		return "conflict"
+	default:
+		return "internal error"
+	}
+}

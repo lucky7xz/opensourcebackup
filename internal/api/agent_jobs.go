@@ -38,7 +38,7 @@ func (h *Handler) startAgentJob(w http.ResponseWriter, r *http.Request) {
 	job.Status = "running"
 	job.StartedAt = &now
 	if err := h.jobs.Update(r.Context(), job); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
@@ -65,7 +65,7 @@ func (h *Handler) completeAgentJob(w http.ResponseWriter, r *http.Request) {
 	job.FinishedAt = &now
 	job.BytesUploaded = &body.BytesUploaded
 	if err := h.jobs.Update(r.Context(), job); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	// Pin a successful job to 100% so it never lingers at e.g. 98.7% (best-effort).
@@ -112,7 +112,7 @@ func (h *Handler) failAgentJob(w http.ResponseWriter, r *http.Request) {
 	job.FinishedAt = &now
 	job.ErrorSummary = &body.ErrorSummary
 	if err := h.jobs.Update(r.Context(), job); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
@@ -131,7 +131,7 @@ func (h *Handler) progressAgentJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.jobs.UpdateProgress(r.Context(), job.ID, p); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -166,7 +166,7 @@ func (h *Handler) cancelledAgentJob(w http.ResponseWriter, r *http.Request) {
 		job.ErrorSummary = &reason
 	}
 	if err := h.jobs.Update(r.Context(), job); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
@@ -186,7 +186,7 @@ func (h *Handler) claimJob(w http.ResponseWriter, r *http.Request) (*catalog.Bac
 	}
 	job, err := h.jobs.GetByID(r.Context(), jobID)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return nil, false
 	}
 	if job.SystemID != systemID {

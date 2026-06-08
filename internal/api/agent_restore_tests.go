@@ -37,7 +37,7 @@ func (h *Handler) completeAgentRestoreTest(w http.ResponseWriter, r *http.Reques
 	}
 	rt, err := h.restoreTests.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	if rt.SystemID != systemID {
@@ -56,7 +56,7 @@ func (h *Handler) completeAgentRestoreTest(w http.ResponseWriter, r *http.Reques
 	rt.VerifiedFiles = &body.VerifiedFiles
 	rt.VerifiedBytes = &body.VerifiedBytes
 	if err := h.restoreTests.Update(r.Context(), rt); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, rt)
@@ -75,7 +75,7 @@ func (h *Handler) failAgentRestoreTest(w http.ResponseWriter, r *http.Request) {
 	}
 	rt, err := h.restoreTests.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	if rt.SystemID != systemID {
@@ -92,7 +92,7 @@ func (h *Handler) failAgentRestoreTest(w http.ResponseWriter, r *http.Request) {
 	rt.Status = "failed"
 	rt.ErrorSummary = &body.ErrorSummary
 	if err := h.restoreTests.Update(r.Context(), rt); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, rt)

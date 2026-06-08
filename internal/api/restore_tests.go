@@ -96,7 +96,7 @@ func (h *Handler) getRestoreTest(w http.ResponseWriter, r *http.Request) {
 	}
 	rt, err := h.restoreTests.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, rt)
@@ -111,7 +111,7 @@ func (h *Handler) startRestoreTest(w http.ResponseWriter, r *http.Request) {
 	rt.Status = "running"
 	rt.StartedAt = &now
 	if err := h.restoreTests.Update(r.Context(), rt); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, rt)
@@ -136,7 +136,7 @@ func (h *Handler) completeRestoreTest(w http.ResponseWriter, r *http.Request) {
 	rt.VerifiedFiles = &body.VerifiedFiles
 	rt.VerifiedBytes = &body.VerifiedBytes
 	if err := h.restoreTests.Update(r.Context(), rt); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, rt)
@@ -159,7 +159,7 @@ func (h *Handler) failRestoreTest(w http.ResponseWriter, r *http.Request) {
 	rt.FinishedAt = &now
 	rt.ErrorSummary = &body.ErrorSummary
 	if err := h.restoreTests.Update(r.Context(), rt); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, rt)
@@ -172,7 +172,7 @@ func (h *Handler) deleteRestoreTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.restoreTests.Delete(r.Context(), id); err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -186,7 +186,7 @@ func (h *Handler) loadRestoreTest(w http.ResponseWriter, r *http.Request) (*cata
 	}
 	rt, err := h.restoreTests.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, httpStatusForError(err), err.Error())
+		writeError(w, httpStatusForError(err), safeErrorMessage(err))
 		return nil, false
 	}
 	return rt, true
