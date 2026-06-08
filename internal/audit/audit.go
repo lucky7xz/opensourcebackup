@@ -70,6 +70,7 @@ const (
 	ActionBackupStarted   Action = "backup.started"
 	ActionBackupCompleted Action = "backup.completed"
 	ActionBackupFailed    Action = "backup.failed"
+	ActionBackupCancelled Action = "backup.cancelled"
 
 	// Restore Test
 	ActionRestoreTestCreated   Action = "restore_test.created"

@@ -167,6 +167,11 @@ type BackupJob struct {
 	ProgressFilesTotal    int
 	ProgressThroughputBps int64
 	LastProgressAt        *time.Time
+
+	// Cooperative cancellation (B_JOB_CANCEL). CancelRequestedAt is set when an
+	// operator requests a stop; the agent observes it and reports status "cancelled".
+	CancelRequestedAt *time.Time
+	CancelReason      string
 }
 
 // JobProgress is a live progress snapshot reported by the agent during a backup.

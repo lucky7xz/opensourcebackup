@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,10 @@ type ControlPlaneClient interface {
 	FailJob(ctx context.Context, jobID uuid.UUID, reason string) error
 	// ReportProgress sends a live progress snapshot while a backup runs (B_JOB_PROGRESS).
 	ReportProgress(ctx context.Context, jobID uuid.UUID, p catalog.JobProgress) error
+	// IsCancelRequested reports whether an operator requested a stop (B_JOB_CANCEL).
+	IsCancelRequested(ctx context.Context, jobID uuid.UUID) (bool, string, error)
+	// CancelledJob reports that the agent stopped a job after a cancel request.
+	CancelledJob(ctx context.Context, jobID uuid.UUID, reason string) error
 	// Repository lookup (agent reads location from policy)
 	GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error)
 	// Restore tests
@@ -320,7 +325,35 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 		}
 	}
 
-	result, err := a.runner.Backup(ctx, restic.BackupOptions{
+	// Cooperative cancellation (B_JOB_CANCEL): a watcher goroutine polls the control
+	// plane while the backup runs; on an operator stop it cancels jobCtx, which kills
+	// restic. The deliberate stop is reported as "cancelled", not "failed".
+	jobCtx, cancelJob := context.WithCancel(ctx)
+	defer cancelJob()
+	var cancelled atomic.Bool
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-jobCtx.Done():
+				return
+			case <-t.C:
+				requested, _, err := a.cp.IsCancelRequested(ctx, job.ID)
+				if err != nil {
+					continue // best-effort; control plane may be briefly unreachable
+				}
+				if requested {
+					cancelled.Store(true)
+					log.Info("cancel requested by operator — stopping backup")
+					cancelJob()
+					return
+				}
+			}
+		}
+	}()
+
+	result, err := a.runner.Backup(jobCtx, restic.BackupOptions{
 		Repo:       repoLocation,
 		Password:   a.cfg.ResticPassword,
 		Includes:   policy.Includes,
@@ -329,6 +362,14 @@ func (a *Agent) executeJob(ctx context.Context, job catalog.BackupJob) {
 		OnProgress: onProgress,
 	})
 	if err != nil {
+		// Report on the parent ctx — jobCtx is already cancelled.
+		if cancelled.Load() {
+			log.Info("backup cancelled by operator")
+			if cerr := a.cp.CancelledJob(ctx, job.ID, "stopped by operator"); cerr != nil {
+				log.Error("mark cancelled failed", "error", cerr)
+			}
+			return
+		}
 		log.Error("backup failed", "error", err)
 		a.doFail(ctx, log, job.ID, err.Error())
 		return

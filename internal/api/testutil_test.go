@@ -248,6 +248,17 @@ func (s *stubJobStore) FinalizeProgress(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *stubJobStore) RequestCancel(_ context.Context, id uuid.UUID, reason string) error {
+	j, ok := s.jobs[id]
+	if !ok {
+		return catalog.ErrNotFound
+	}
+	now := time.Now()
+	j.CancelRequestedAt = &now
+	j.CancelReason = reason
+	return nil
+}
+
 func (s *stubJobStore) Delete(_ context.Context, id uuid.UUID) error {
 	if _, ok := s.jobs[id]; !ok {
 		return catalog.ErrNotFound

@@ -14,7 +14,8 @@ const jobSelect = `
 	SELECT id, system_id, policy_id, type, started_at, finished_at, status,
 	       bytes_scanned, bytes_uploaded, error_summary, raw_output, created_at,
 	       progress_phase, progress_percent, progress_bytes_done, progress_bytes_total,
-	       progress_files_done, progress_files_total, progress_throughput_bps, last_progress_at
+	       progress_files_done, progress_files_total, progress_throughput_bps, last_progress_at,
+	       cancel_requested_at, cancel_reason
 	FROM backup_jobs`
 
 // JobStore defines data access for the backup_jobs table.
@@ -35,6 +36,9 @@ type JobStore interface {
 	// FinalizeProgress pins a completed job to 100% so a successful job never
 	// lingers at e.g. 98.7%. Leaves progress untouched for failed/cancelled jobs.
 	FinalizeProgress(ctx context.Context, id uuid.UUID) error
+	// RequestCancel marks a running job for cooperative cancellation (B_JOB_CANCEL).
+	// The agent polls this flag and stops restic; only running/pending jobs qualify.
+	RequestCancel(ctx context.Context, id uuid.UUID, reason string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -186,6 +190,23 @@ func (s *pgJobStore) FinalizeProgress(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *pgJobStore) RequestCancel(ctx context.Context, id uuid.UUID, reason string) error {
+	// Only pending/running jobs can be cancelled — a finished job is immutable.
+	tag, err := s.db.pool.Exec(ctx, `
+		UPDATE backup_jobs
+		SET cancel_requested_at=NOW(), cancel_reason=$1
+		WHERE id=$2 AND status IN ('pending','running')`,
+		reason, pgtype.UUID{Bytes: id, Valid: true},
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *pgJobStore) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := s.db.pool.Exec(ctx, `DELETE FROM backup_jobs WHERE id = $1`,
 		pgtype.UUID{Bytes: id, Valid: true},
@@ -232,6 +253,7 @@ func scanJob(row rowScanner) (*BackupJob, error) {
 		&j.CreatedAt,
 		&j.ProgressPhase, &j.ProgressPercent, &j.ProgressBytesDone, &j.ProgressBytesTotal,
 		&j.ProgressFilesDone, &j.ProgressFilesTotal, &j.ProgressThroughputBps, &j.LastProgressAt,
+		&j.CancelRequestedAt, &j.CancelReason,
 	); err != nil {
 		return nil, err
 	}

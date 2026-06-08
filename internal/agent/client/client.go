@@ -131,6 +131,30 @@ func (c *Client) ReportProgress(ctx context.Context, jobID uuid.UUID, p catalog.
 	return nil
 }
 
+// IsCancelRequested asks the control plane whether an operator requested a stop of
+// this running job (B_JOB_CANCEL). Returns (requested, reason, error).
+func (c *Client) IsCancelRequested(ctx context.Context, jobID uuid.UUID) (bool, string, error) {
+	url := fmt.Sprintf("%s/v1/agent/jobs/%s/cancel-requested", c.baseURL, jobID)
+	var resp struct {
+		CancelRequested bool   `json:"cancel_requested"`
+		Reason          string `json:"reason"`
+	}
+	if err := c.get(ctx, url, &resp); err != nil {
+		return false, "", fmt.Errorf("cancel status %s: %w", jobID, err)
+	}
+	return resp.CancelRequested, resp.Reason, nil
+}
+
+// CancelledJob reports that the agent stopped a job in response to a cancel request.
+func (c *Client) CancelledJob(ctx context.Context, jobID uuid.UUID, reason string) error {
+	url := fmt.Sprintf("%s/v1/agent/jobs/%s/cancelled", c.baseURL, jobID)
+	body := map[string]any{"reason": reason}
+	if err := c.put(ctx, url, body); err != nil {
+		return fmt.Errorf("cancelled job %s: %w", jobID, err)
+	}
+	return nil
+}
+
 // GetRepository returns the repository with the given ID.
 func (c *Client) GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error) {
 	url := fmt.Sprintf("%s/v1/repositories/%s", c.baseURL, id)
