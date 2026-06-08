@@ -5,8 +5,41 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/cerberus8484/opensourcebackup/internal/audit"
 	"github.com/cerberus8484/opensourcebackup/internal/catalog"
+	"github.com/cerberus8484/opensourcebackup/internal/security"
 )
+
+// cancelJob handles POST /v1/jobs/{id}/cancel — an operator requests a stop of a
+// running/pending backup (operational safety, B_JOB_CANCEL). It only flags the
+// job; the agent observes the flag and stops restic, then reports "cancelled".
+func (h *Handler) cancelJob(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = decode(r, &body) // reason is optional
+
+	if err := h.jobs.RequestCancel(r.Context(), id, body.Reason); err != nil {
+		writeError(w, httpStatusForError(err), err.Error())
+		return
+	}
+	// Audit who/when/why — cancelling a backup is an operational safety action.
+	_ = h.auditStore.Append(r.Context(), audit.Event(
+		audit.ActionBackupCancelled, audit.ResourceJob, id.String()).
+		By(audit.ActorAdmin).
+		IP(security.ClientIPHashed(r)).
+		UA(r.UserAgent()).
+		Details(body.Reason).
+		Severity(audit.SeverityWarning).
+		Build())
+
+	w.WriteHeader(http.StatusAccepted) // 202 — requested; the agent will act
+}
 
 func (h *Handler) listJobs(w http.ResponseWriter, r *http.Request) {
 	systemIDStr := r.URL.Query().Get("system_id")

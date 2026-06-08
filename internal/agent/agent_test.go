@@ -26,6 +26,7 @@ type stubCP struct {
 	completed []uuid.UUID
 	failed    []failRecord
 	progress  []catalog.JobProgress
+	cancelled []uuid.UUID
 	listErr   error
 }
 
@@ -64,6 +65,15 @@ func (s *stubCP) FailJob(_ context.Context, id uuid.UUID, reason string) error {
 
 func (s *stubCP) ReportProgress(_ context.Context, id uuid.UUID, p catalog.JobProgress) error {
 	s.progress = append(s.progress, p)
+	return nil
+}
+
+func (s *stubCP) IsCancelRequested(_ context.Context, _ uuid.UUID) (bool, string, error) {
+	return false, "", nil
+}
+
+func (s *stubCP) CancelledJob(_ context.Context, id uuid.UUID, _ string) error {
+	s.cancelled = append(s.cancelled, id)
 	return nil
 }
 
@@ -218,6 +228,12 @@ func (f *failOnceCP) FailJob(ctx context.Context, id uuid.UUID, r string) error 
 }
 func (f *failOnceCP) ReportProgress(ctx context.Context, id uuid.UUID, p catalog.JobProgress) error {
 	return f.inner.ReportProgress(ctx, id, p)
+}
+func (f *failOnceCP) IsCancelRequested(ctx context.Context, id uuid.UUID) (bool, string, error) {
+	return f.inner.IsCancelRequested(ctx, id)
+}
+func (f *failOnceCP) CancelledJob(ctx context.Context, id uuid.UUID, r string) error {
+	return f.inner.CancelledJob(ctx, id, r)
 }
 func (f *failOnceCP) GetRepository(ctx context.Context, id uuid.UUID) (*catalog.BackupRepository, error) {
 	return f.inner.GetRepository(ctx, id)

@@ -56,6 +56,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/complete", h.completeAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/fail", h.failAgentJob)
 	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/progress", h.progressAgentJob)
+	agentMux.HandleFunc("GET /v1/agent/jobs/{id}/cancel-requested", h.cancelStatusAgentJob)
+	agentMux.HandleFunc("PUT /v1/agent/jobs/{id}/cancelled", h.cancelledAgentJob)
 	// Snapshot read for restore tests (agent needs engine_snapshot_id)
 	agentMux.HandleFunc("GET /v1/agent/snapshots/{id}", h.getSnapshot)
 	// Restore tests
@@ -86,6 +88,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /v1/jobs", h.listJobs)
 	mux.HandleFunc("POST /v1/jobs", h.createJob)
+	mux.HandleFunc("POST /v1/jobs/{id}/cancel", requireRoleFn(auth.RoleOperator, h.cancelJob))
 	mux.HandleFunc("GET /v1/jobs/{id}", h.getJob)
 	mux.HandleFunc("PUT /v1/jobs/{id}", h.updateJob)
 	mux.HandleFunc("DELETE /v1/jobs/{id}", h.deleteJob)

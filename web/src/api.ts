@@ -109,6 +109,18 @@ export interface BackupJob {
   Type?: string  // 'backup' | 'retention'
   BytesUploaded?: number; StartedAt?: string; FinishedAt?: string
   ErrorSummary?: string; CreatedAt: string
+  // Live progress (B_JOB_PROGRESS) — aggregate counters only, no file paths
+  ProgressPhase?:         string
+  ProgressPercent?:       number  // 0..100
+  ProgressBytesDone?:     number
+  ProgressBytesTotal?:    number
+  ProgressFilesDone?:     number
+  ProgressFilesTotal?:    number
+  ProgressThroughputBps?: number
+  LastProgressAt?:        string
+  // Cooperative cancellation (B_JOB_CANCEL)
+  CancelRequestedAt?: string
+  CancelReason?:      string
 }
 export interface Snapshot {
   ID: string; JobID: string; RepositoryID: string; EngineSnapshotID: string
@@ -154,6 +166,14 @@ export const api = {
     post<BackupJob>('/v1/jobs', { SystemID: systemID, PolicyID: policyID, Status: 'pending' }),
   createEnrollmentToken: (systemID: string) =>
     post<{token:string; expires_at:string}>(`/v1/systems/${systemID}/enrollment-token`, {}),
+  cancelJob: async (id: string, reason: string): Promise<void> => {
+    const res = await fetch(`${BASE}/v1/jobs/${id}/cancel`, {
+      method: 'POST',
+      headers: mutatingHeaders(),
+      body: JSON.stringify({ reason }),
+    })
+    if (!res.ok) throw new Error(`${res.status}`)
+  },
 }
 
 export function fmt(bytes?: number) {

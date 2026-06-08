@@ -137,6 +137,41 @@ func (h *Handler) progressAgentJob(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// cancelStatusAgentJob handles GET /v1/agent/jobs/{id}/cancel-requested — the agent
+// polls this while a backup runs to learn whether an operator requested a stop.
+func (h *Handler) cancelStatusAgentJob(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.claimJob(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cancel_requested": job.CancelRequestedAt != nil,
+		"reason":           job.CancelReason,
+	})
+}
+
+// cancelledAgentJob handles PUT /v1/agent/jobs/{id}/cancelled — the agent reports
+// that it stopped a running backup in response to a cancel request. The terminal
+// status is "cancelled" — a deliberate stop is NOT a failure.
+func (h *Handler) cancelledAgentJob(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.claimJob(w, r)
+	if !ok {
+		return
+	}
+	now := time.Now()
+	job.Status = "cancelled"
+	job.FinishedAt = &now
+	if job.CancelReason != "" {
+		reason := job.CancelReason
+		job.ErrorSummary = &reason
+	}
+	if err := h.jobs.Update(r.Context(), job); err != nil {
+		writeError(w, httpStatusForError(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
 // claimJob fetches a job and verifies it belongs to the authenticated system.
 func (h *Handler) claimJob(w http.ResponseWriter, r *http.Request) (*catalog.BackupJob, bool) {
 	systemID, ok := SystemIDFromContext(r.Context())
