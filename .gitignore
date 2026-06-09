@@ -43,6 +43,9 @@ tooldesign/
 docs/dev_journal.md
 docs/dev_journal.html
 
+# Komprimierte Session-/Chat-Zusammenfassungen — nicht öffentlich
+docs/session-summaries/
+
 # Agent runtime data (tokens, restore test sandboxes)
 data/
 
